@@ -2,7 +2,7 @@ import * as C from './config.js';
 import { formatDay, parseDay, shiftDay } from './rng.js';
 import { doorHeight } from './tower.js';
 import { sfx, setMuted } from './audio.js';
-import { palette, drawHeart, inkHeart, tint, hex } from './draw.js';
+import { palette, drawHeart, inkHeart, tint, hex, textColors } from './draw.js';
 const BAR_W = 120;
 
 export function label(scene, x, y, text, size, alpha = 1, fixed = true) {
@@ -123,7 +123,7 @@ export class Hud {
     this.scorePunch = Math.min(1, Math.max(this.scorePunch || 0, 0.35 + pts / 600));
   }
 
-  announce(text, color = 0xffffff) {
+  announce(text, color = null) {
     this.queue.push({ text, color });
     if (!this.busy) this.next();
   }
@@ -138,7 +138,8 @@ export class Hud {
     const b = this.banner;
     const tweens = this.sc.tweens;
     tweens.killTweensOf(b);
-    b.setText(item.text).setColor(hex(item.color)).setStroke(hex(this.sc.col.ink), 8).setAlpha(1).setScale(0.6);
+    const tc = textColors(this.sc.col);
+    b.setText(item.text).setColor(hex(item.color ?? tc.plain)).setStroke(hex(tc.outline), 8).setAlpha(1).setScale(0.6);
     tweens.add({ targets: b, scale: 1, duration: 260, ease: 'Back.Out' });
     tweens.add({ targets: b, alpha: 0, delay: 850, duration: 450, onComplete: () => this.next() });
   }

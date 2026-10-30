@@ -5,7 +5,7 @@ import { integrate, substeps, launchSpeed, previewPath, MIN_X, MAX_X } from './p
 import { dayKey } from './rng.js';
 import * as Save from './save.js';
 import { sfx, unlockAudio, setMuted, buzz } from './audio.js';
-import { drawWorld, palette, portalColor, hex, tint } from './draw.js';
+import { drawWorld, palette, portalColor, hex, tint, textColors, wordColor } from './draw.js';
 import { Hud, Menu, label } from './ui.js';
 
 const STEP = 1 / 120;
@@ -513,7 +513,7 @@ export class GameScene extends Phaser.Scene {
     this.burst(x, y, this.col.deco, 8, 200, Math.sign(f.vx) * 0.3, -1);
   }
 
-  // Only blue portals take you in; you streak to the yellow one in WARP_TIME and leave it
+  // Only blue portals take you in; you streak to the yellow one at WARP_SPEED and leave it
   // with a fixed push straight up (PORTAL_EXIT), whatever speed you entered with.
   checkPortals() {
     const pl = this.player;
@@ -525,7 +525,8 @@ export class GameScene extends Phaser.Scene {
       for (let i = 0; i < 80 && !pt.pair && !pt.gone; i++) this.tower.step();
       const to = pt.pair;
       if (!to) return;
-      pl.warp = { to, x0: pl.x, y0: pl.y, x1: to.x, y1: to.y, t: 0, ang: Math.atan2(to.y - pl.y, to.x - pl.x) };
+      const dur = Math.max(0.1, Math.hypot(to.x - pl.x, to.y - pl.y) / C.WARP_SPEED);
+      pl.warp = { to, x0: pl.x, y0: pl.y, x1: to.x, y1: to.y, t: 0, dur, ang: Math.atan2(to.y - pl.y, to.x - pl.x) };
       this.elementScore(pl.x, pl.y, pt);
       this.burst(pl.x, pl.y, portalColor(pt, this.col), 10, 200);
       sfx.portal();
@@ -543,10 +544,9 @@ export class GameScene extends Phaser.Scene {
     const pl = this.player;
     const w = pl.warp;
     w.t += dt;
-    const k = Math.min(1, w.t / C.WARP_TIME);
-    const e = k * k * (3 - 2 * k);
-    pl.x = w.x0 + (w.x1 - w.x0) * e;
-    pl.y = w.y0 + (w.y1 - w.y0) * e;
+    const k = Math.min(1, w.t / w.dur); // constant speed: straight line, no easing
+    pl.x = w.x0 + (w.x1 - w.x0) * k;
+    pl.y = w.y0 + (w.y1 - w.y0) * k;
     if (k < 1) return;
     // No momentum carried over: a small push straight up, however you went in.
     Object.assign(pl, { warp: null, portalT: 0.3 });
@@ -724,9 +724,9 @@ export class GameScene extends Phaser.Scene {
     while (h >= doorHeight(this.runDoor)) {
       const secs = this.runT - this.doorT;
       const tier = C.DOOR_TIERS.find((t) => secs < t.under);
-      this.hud.announce(`${tier.word}!`, C.WORD_COLORS[tier.word]);
+      this.hud.announce(`${tier.word}!`, wordColor(this.col, tier.word));
       this.addScore(tier.pts, pl.x, pl.y);
-      this.popText(pl.x, pl.y + 10, `${doorHeight(this.runDoor)}m in ${secs.toFixed(1)}s`, 14, 0xffffff, 0.75);
+      this.popText(pl.x, pl.y + 10, `${doorHeight(this.runDoor)}m in ${secs.toFixed(1)}s`, 14, textColors(this.col).plain, 0.75);
       this.runDoor++;
       this.doorT = this.runT;
       // The tower takes on the palette of the section above the door just reached.
@@ -851,7 +851,7 @@ export class GameScene extends Phaser.Scene {
     x = clamp(x + Phaser.Math.Between(-14, 14), C.WALL + 40, C.W - C.WALL - 40);
     const t = label(this, x, y, text, size, alpha, false)
       .setColor(hex(color))
-      .setStroke(hex(this.col.ink), 4)
+      .setStroke(hex(textColors(this.col).outline), 4)
       .setDepth(45)
       .setScale(1.2);
     this.tweens.add({ targets: t, scale: 1, duration: 120, ease: 'Quad.Out' });
@@ -866,7 +866,7 @@ export class GameScene extends Phaser.Scene {
   // The chain word, small, just above the "+n". Better words are a touch bigger.
   wordPop(x, y, word) {
     const rank = Math.max(0, C.CHAIN_WORDS.indexOf(word));
-    this.popText(x, y + 22, word, 13 + rank, C.WORD_COLORS[word] ?? 0xffffff, 0.8);
+    this.popText(x, y + 22, word, 13 + rank, wordColor(this.col, word), 0.8);
   }
 
   floatText(x, y, text) {

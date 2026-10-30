@@ -41,6 +41,22 @@ export function inkHeart(g, x, y, s, fill, ink, alpha = 1) {
   drawHeart(g, x, y, s);
 }
 
+const lum = (c) => 0.299 * ((c >> 16) & 255) + 0.587 * ((c >> 8) & 255) + 0.114 * (c & 255);
+
+// Pop-up text colors for a palette: `outline` is the darker of bg and fg, so text reads on any
+// background; `plain` is a light fill for neutral text.
+export function textColors(col) {
+  const dark = lum(col.bg) < lum(col.ink) ? col.bg : col.ink;
+  const light = dark === col.bg ? col.ink : col.bg;
+  return { outline: dark, plain: mixColor(light, 0xffffff, 0.6) };
+}
+
+// The color of a pop-up word in the current palette (see C.WORD_ROLES).
+export function wordColor(col, word) {
+  const role = C.WORD_ROLES[word];
+  return role ? col[role] : textColors(col).plain;
+}
+
 // Sets a text object's color only when it changes (setColor re-renders the text).
 export function tint(text, color) {
   if (text._tint === color) return text;
@@ -183,20 +199,49 @@ function drawPlatform(sc, g, p, col) {
       }
       break;
     }
-    case 'bouncy': {
-      const squash = p.squashT != null ? Math.max(0, 1 - (t - p.squashT) / 0.25) : 0;
-      const hgt = 14 - 6 * squash;
-      const bx = x0 - 4 * squash;
-      const by = p.y + 6 * squash;
-      const bw = p.w + 8 * squash;
-      g.fillStyle(col.ink, 1).fillRoundedRect(bx - OUTLINE, by - OUTLINE, bw + 2 * OUTLINE, hgt + 2 * OUTLINE, hgt / 2 + OUTLINE);
-      g.fillStyle(col.bouncy, 1).fillRoundedRect(bx, by, bw, hgt, hgt / 2);
+    case 'bouncy':
+      drawSpring(g, p, x, t, col);
       break;
-    }
   }
 }
 
 const T = C.PLAT_THICK;
+
+// Bouncy pad: a pad (the landing surface, at p.y) on a zig-zag coil spring standing on a base.
+// A bounce pushes the pad down, then it wobbles back like a real spring.
+function drawSpring(g, p, x, t, col) {
+  const since = p.squashT != null ? t - p.squashT : Infinity;
+  const dip = since < 0.8 ? 9 * Math.exp(-6 * since) * Math.cos(22 * since) : 0; // + is down
+  const padH = 10;
+  const padY = p.y + dip;
+  const baseY = p.y + 30;
+  const coilW = p.w * 0.42;
+  // Coil: ink first, a little wider, then the color on top.
+  const turns = 5;
+  const y0 = padY + padH;
+  const pts = [{ x, y: y0 }];
+  for (let i = 1; i < turns * 2; i++) pts.push({ x: x + (i % 2 ? -1 : 1) * coilW / 2, y: y0 + ((baseY - y0) * i) / (turns * 2) });
+  pts.push({ x, y: baseY });
+  g.lineStyle(6, col.ink, 1).strokePoints(pts, false);
+  g.lineStyle(3, col.bouncy, 1).strokePoints(pts, false);
+  // Base plate.
+  const bw = p.w * 0.6;
+  g.fillStyle(col.ink, 1).fillRoundedRect(x - bw / 2, baseY - 1, bw, 7, 3);
+  // Pad, slightly wider while squashed.
+  const squash = Math.max(0, dip) / 9;
+  const w = p.w + 10 * squash;
+  g.fillStyle(col.ink, 1).fillRoundedRect(x - w / 2 - OUTLINE, padY - OUTLINE, w + 2 * OUTLINE, padH + 2 * OUTLINE, padH / 2 + OUTLINE);
+  g.fillStyle(col.bouncy, 1).fillRoundedRect(x - w / 2, padY, w, padH, padH / 2);
+  // A small up chevron on the pad says "this throws you up".
+  g.lineStyle(2.5, col.ink, 0.7).strokePoints(
+    [
+      { x: x - 9, y: padY + padH - 2 },
+      { x, y: padY + 2 },
+      { x: x + 9, y: padY + padH - 2 },
+    ],
+    false,
+  );
+}
 
 // Platforms are solid: a thick block with an ink outline, so it reads as a wall from every side.
 function slab(g, x0, y, w, col) {
@@ -224,7 +269,7 @@ function drawElevator(sc, g, e, col) {
     { x: e.x - half, y: y - Wl },
     { x: e.x - half, y: top },
   ];
-  g.fillStyle(col.bouncy, 1).fillPoints(pts, true);
+  g.fillStyle(col.elevator, 1).fillPoints(pts, true);
   g.lineStyle(OUTLINE, col.ink, 1).strokePoints(pts, true, true);
   // An up arrow inside while it waits.
   if (off === 0) {
@@ -369,15 +414,56 @@ function drawFunnel(sc, g, f, col) {
   }
 }
 
-// One circle with a border. Particles stream into the blue portal and out of the yellow one.
+// Two different shapes, so the way in and the way out read at a glance.
+// Entry: a dark hole with a colored rim and spiral arms turning inward. Particles stream in.
+// Exit: a solid disc with rays pulsing outward and an up arrow. Particles stream out.
 function drawPortal(sc, g, pt, col) {
   if (pt.gone) return;
   const c = portalColor(pt, col);
   const R = C.PORTAL_R;
-  const pulse = 1 + 0.04 * Math.sin(sc.simT * 5 + pt.x);
-  g.fillStyle(c, 0.25).fillCircle(pt.x, pt.y, R * pulse + 7);
-  g.fillStyle(c, 1).fillCircle(pt.x, pt.y, R * pulse);
-  g.lineStyle(3, col.ink, 1).strokeCircle(pt.x, pt.y, R * pulse);
+  const t = sc.simT;
+  const { x, y } = pt;
+  if (pt.color === 'blue') {
+    const hole = textColors(col).outline;
+    g.fillStyle(c, 0.22).fillCircle(x, y, R + 8);
+    g.fillStyle(c, 1).fillCircle(x, y, R);
+    g.fillStyle(hole, 1).fillCircle(x, y, R * 0.72);
+    // Three arms spiraling into the middle, turning.
+    for (let j = 0; j < 3; j++) {
+      const arm = [];
+      for (let i = 0; i <= 10; i++) {
+        const k = i / 10;
+        const r = R * (0.7 - 0.6 * k);
+        const a = -t * 3 + (j * TAU) / 3 + k * 2.4;
+        arm.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r });
+      }
+      g.lineStyle(3, c, 0.9).strokePoints(arm, false);
+    }
+    g.lineStyle(3, col.ink, 1).strokeCircle(x, y, R);
+    return;
+  }
+  // Exit: rays around a solid disc, an ink up arrow inside.
+  const pulse = (t * 1.6 + pt.x * 0.01) % 1;
+  for (let i = 0; i < 8; i++) {
+    const a = (i * TAU) / 8 + t * 0.6;
+    const r0 = R + 4 + 6 * pulse;
+    const r1 = r0 + 8;
+    g.lineStyle(3, c, 1 - pulse).lineBetween(x + Math.cos(a) * r0, y + Math.sin(a) * r0, x + Math.cos(a) * r1, y + Math.sin(a) * r1);
+  }
+  g.fillStyle(c, 1).fillCircle(x, y, R);
+  g.lineStyle(3, col.ink, 1).strokeCircle(x, y, R);
+  g.fillStyle(col.ink, 0.8).fillPoints(
+    [
+      { x, y: y - R * 0.55 },
+      { x: x + R * 0.45, y: y - R * 0.05 },
+      { x: x + R * 0.18, y: y - R * 0.05 },
+      { x: x + R * 0.18, y: y + R * 0.5 },
+      { x: x - R * 0.18, y: y + R * 0.5 },
+      { x: x - R * 0.18, y: y - R * 0.05 },
+      { x: x - R * 0.45, y: y - R * 0.05 },
+    ],
+    true,
+  );
 }
 
 function drawPortalFx(sc, g) {
@@ -490,7 +576,7 @@ function drawPlayer(sc, g, col, aim) {
   if (pl.funnel) sx = sy = 0.8; // squeezed in the tube
   if (pl.warp) {
     // Long and narrow along the flight between portals.
-    const k = Math.min(1, pl.warp.t / C.WARP_TIME);
+    const k = Math.min(1, pl.warp.t / pl.warp.dur);
     ang = pl.warp.ang;
     sx = 1.8 + 1.2 * Math.sin(Math.PI * k);
     sy = 0.5;

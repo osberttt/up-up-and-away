@@ -20,7 +20,7 @@ export const MAX_LAUNCH = Math.sqrt(2 * GRAVITY * PEAK); // ~1640 px/s at a full
 export const WALL_BOUNCE = 0.8;
 
 // Jumps are unlimited, on the ground or in the air, but each one starts a cooldown.
-export const JUMP_COOLDOWN = 0.3;
+export const JUMP_COOLDOWN = 0.5;
 export const HIT_STUN = 1; // no jumping for this long after a hazard hit, so you drop
 
 // Platforms are solid on every side (doors stay one-way). They are rare: the generator plans a
@@ -49,7 +49,7 @@ export const FUNNEL_TUBE = 140; // length of the tube rising from the tip
 export const FUNNEL_NECK = 22; // half-width of the tube
 export const FUNNEL_SPEED = 900; // px/s while sliding through the funnel and its tube
 export const PORTAL_R = 26;
-export const WARP_TIME = 0.9; // seconds to fly from the blue portal to the yellow one
+export const WARP_SPEED = 1400; // px/s flying from the blue portal to the yellow one, whatever the distance
 export const PORTAL_EXIT = 1700; // upward speed (px/s) you leave the yellow portal with
 export const FUNNEL_RISE = [900, 1300]; // px a funnel fires you above its top
 
@@ -87,7 +87,7 @@ export const PORTAL_CHANCE = 0.15;
 // Score (per run; a death starts over). Height itself scores nothing.
 // Every element is worth the same: bouncy pad, star, heart, funnel, elevator, portal. Each pad,
 // star, funnel, elevator and portal scores once per run; every heart taken scores.
-export const SCORE_ELEMENT = 10;
+export const SCORE_ELEMENT = 50;
 // Elements hit within CHAIN_WINDOW seconds of each other form a chain; the word that pops up
 // climbs with it (1st NICE, 2nd GOOD, ... 5th and on FANTASTIC).
 export const CHAIN_WINDOW = 2.5;
@@ -95,25 +95,26 @@ export const CHAIN_WORDS = ['NICE', 'GOOD', 'GREAT', 'AMAZING', 'FANTASTIC'];
 // Reaching a door scores by the seconds since the previous door (or the run's start):
 // the first tier whose limit the time is under.
 export const DOOR_TIERS = [
-  { under: 5, pts: 300, word: 'FANTASTIC' },
-  { under: 7, pts: 250, word: 'AMAZING' },
-  { under: 10, pts: 200, word: 'GREAT' },
-  { under: 15, pts: 150, word: 'GOOD' },
-  { under: 20, pts: 100, word: 'NICE' },
-  { under: 25, pts: 75, word: 'OK' },
-  { under: 30, pts: 50, word: 'SLOW' },
+  { under: 7, pts: 300, word: 'FANTASTIC' },
+  { under: 10, pts: 250, word: 'AMAZING' },
+  { under: 14, pts: 200, word: 'GREAT' },
+  { under: 19, pts: 150, word: 'GOOD' },
+  { under: 25, pts: 100, word: 'NICE' },
+  { under: 32, pts: 75, word: 'OK' },
+  { under: 40, pts: 50, word: 'SLOW' },
   { under: Infinity, pts: 25, word: 'PHEW' },
 ];
-// Pop-up word colors; brighter for better words.
-export const WORD_COLORS = {
-  FANTASTIC: 0xff4fd8,
-  AMAZING: 0xb26bff,
-  GREAT: 0x3fd0ff,
-  GOOD: 0x55e07a,
-  NICE: 0xffffff,
-  OK: 0xffffff,
-  SLOW: 0xffb36b,
-  PHEW: 0xffb36b,
+// Pop-up word colors come from the current palette: which palette role each word uses
+// (null = the plain text color). Better words get the more exciting colors.
+export const WORD_ROLES = {
+  FANTASTIC: 'launched',
+  AMAZING: 'heart',
+  GREAT: 'star',
+  GOOD: 'canJump',
+  NICE: null,
+  OK: null,
+  SLOW: 'cantJump',
+  PHEW: 'cantJump',
 };
 
 export const PX_PER_M = 40;

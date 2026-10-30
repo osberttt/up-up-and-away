@@ -11,7 +11,7 @@ Endless vertical slingshot climber for mobile browsers, built with Phaser 3. Off
 - Floating hearts restore one heart each; they fade 10 s after coming on screen and respawn 12 s later.
 - Doors every 100m: passing one opens a floor you can't fall below today and refills all hearts.
 - Every platform type, hazard, funnel and portal can appear from the start; there is no height progression.
-- Score (per run, not height): every element is +10 (bouncy pad, star, heart, funnel, elevator, portal; each once per run except hearts). Elements hit within 2.5 s of each other chain: NICE, GOOD, GREAT, AMAZING, FANTASTIC. Each 100m door scores by the time since the previous one: under 5 s +300, 7 s +250, 10 s +200, 15 s +150, 20 s +100, 25 s +75, 30 s +50, slower +25. Today's best run score is saved.
+- Score (per run, not height): every element is +50 (bouncy pad, star, heart, funnel, elevator, portal; each once per run except hearts). Elements hit within 2.5 s of each other chain: NICE, GOOD, GREAT, AMAZING, FANTASTIC. Each 100m door scores by the time since the previous one: under 7 s +300, 10 s +250, 14 s +200, 19 s +150, 25 s +100, 32 s +75, 40 s +50, slower +25. Today's best run score is saved.
 - One tower per day for everyone (seeded by the local date); stats are saved in the browser.
 
 ## Run

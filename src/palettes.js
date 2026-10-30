@@ -2,7 +2,7 @@
 // to the next. `bg` is the background, `fg` the contrast tone (platforms, outlines, text), and
 // `accents` the object colors.
 //
-// The order is a planned journey, the same every day: the climb goes from a meadow at the ground
+// The order is a planned journey, the same every day: the climb starts in soft pastels and goes
 // through the day, sunset and night into space. Neighbors are close in color so each door is a
 // gentle step. Past the end, the last act (LOOP_FROM on) repeats.
 //
@@ -12,24 +12,25 @@
 // Preview them with `npm run palettes` (writes palette-preview/palettes.png).
 
 export const PALETTES = [
-  // Meadow: the ground, fresh greens and teals
-  { name: 'Spring Meadow', mood: 'bright', bg: '#b5e48c', fg: '#1a3311', accents: ['#ff6b6b', '#4361ee', '#ffd60a', '#f72585', '#ffffff'] },
-  { name: 'Retro Diner', mood: 'bright', bg: '#8fd8d2', fg: '#1d2a2a', accents: ['#e63946', '#ffb703', '#3a5ba0', '#ffffff', '#f28482'] },
+  // Pastel dawn: soft mint, pale blues, lavender and blossom
   { name: 'Seaglass', mood: 'pastel', bg: '#d8f3dc', fg: '#1b4332', accents: ['#40916c', '#ff8fab', '#4895ef', '#ffd166', '#9d4edd'] },
-  // Morning sky: pale blues into soft pastels
   { name: 'Arctic', mood: 'pastel', bg: '#eaf6fb', fg: '#16324f', accents: ['#4ea8de', '#ff6b6b', '#ffd166', '#72efdd', '#b388eb'] },
   { name: 'Bubblegum Sky', mood: 'pastel', bg: '#dff3ff', fg: '#23304a', accents: ['#ff9ecf', '#5aa9f0', '#ffd36e', '#a0e8af', '#b38cff'] },
   { name: 'Lavender Fog', mood: 'pastel', bg: '#ede7f6', fg: '#2e2347', accents: ['#9575cd', '#f48fb1', '#80deea', '#fff176', '#aed581'] },
   { name: 'Cherry Blossom', mood: 'pastel', bg: '#ffe5ec', fg: '#3d1f2b', accents: ['#fb6f92', '#ffb3c6', '#5fa8d3', '#ffc971', '#a7c957'] },
-  // Daylight: creams and paper whites
+  // Pastel morning: creams and peach
   { name: 'Ice Cream', mood: 'pastel', bg: '#fffdf7', fg: '#3b2c35', accents: ['#ff7b8a', '#ffb085', '#f7d488', '#9ad89b', '#8fc9f2'] },
   { name: 'Sherbet', mood: 'pastel', bg: '#fff4e8', fg: '#2b2140', accents: ['#ff8fab', '#ffc46b', '#9be7c4', '#8ecae6', '#cdb4db'] },
   { name: 'Peach Fuzz', mood: 'pastel', bg: '#ffe3d3', fg: '#4a2c2a', accents: ['#ff6f5e', '#4fb3bf', '#ffd166', '#b08ee0', '#8fd694'] },
+  // Daylight: paper whites and beige
   { name: 'Bubble Tea', mood: 'pastel', bg: '#f5e6d3', fg: '#3d2b1f', accents: ['#c08497', '#5fa8b0', '#f08a6c', '#9d8bd6', '#e8c547'] },
   { name: 'Riso Print', mood: 'bright', bg: '#f6f1e6', fg: '#1b1b3a', accents: ['#ff48b0', '#0078bf', '#ffe800', '#00a95c', '#ff6c2f'] },
   { name: 'Bauhaus', mood: 'bright', bg: '#f4efe1', fg: '#111111', accents: ['#e63946', '#1d3557', '#f1c40f', '#2a9d8f', '#f77f00'] },
   { name: 'Paper Lantern', mood: 'earthy', bg: '#f3e3c3', fg: '#3a2618', accents: ['#d1495b', '#edae49', '#00798c', '#30638e', '#66a182'] },
   { name: 'Vintage Postcard', mood: 'dull', bg: '#e8dcc4', fg: '#2f2a24', accents: ['#d17a22', '#5e8c61', '#8e3b46', '#4a6c8c', '#e3b505'] },
+  // Midday meadow: fresh teal and green
+  { name: 'Retro Diner', mood: 'bright', bg: '#8fd8d2', fg: '#1d2a2a', accents: ['#e63946', '#ffb703', '#3a5ba0', '#ffffff', '#f28482'] },
+  { name: 'Spring Meadow', mood: 'bright', bg: '#b5e48c', fg: '#1a3311', accents: ['#ff6b6b', '#4361ee', '#ffd60a', '#f72585', '#ffffff'] },
   // Noon: the sun, warm yellows
   { name: 'Lemonade', mood: 'bright', bg: '#fff36b', fg: '#2c2a00', accents: ['#ff5d73', '#2bc4e8', '#5e60ce', '#45c36a', '#ff8c42'] },
   { name: 'Tropical', mood: 'bright', bg: '#ffe66d', fg: '#1a1a2e', accents: ['#ff6b6b', '#1a9e97', '#1a535c', '#ff9f1c', '#c44dff'] },
@@ -140,9 +141,28 @@ export function expand(p) {
   // The star may share a color.
   const canJump = pick('canJump', true);
   const cantJump = pick('cantJump', true);
-  const launched = pick('launched', true);
+  // Invincible: a purple/magenta accent if there is one, else the palette's most saturated
+  // leftover accent, and only then the fallback purple.
+  const sat = (c) => hsl(c).s;
+  const spare = () => accents.filter((c) => !used.has(c)).sort((a, b) => sat(b) - sat(a));
+  let launched = pick('launched', false);
+  if (!accents.includes(launched) || used.has(launched)) launched = spare()[0] ?? visible(ROLES.launched[2]);
+  used.add(launched);
   const heart = pick('heart', true);
   const star = pick('star', false);
+  // Elements get their own colors, always the palette's accents (their shapes tell them apart).
+  // A looser visibility rule than the ball's, so muted palettes still have choices. Accents the
+  // ball doesn't use come first; the warm danger color is never used.
+  const raw = p.accents.map(toInt).filter((c) => {
+    const { s, l } = hsl(c);
+    return s > 0.15 && l < 0.95 && rgbDist(c, bg) > 60 && c !== cantJump;
+  });
+  const free = raw.filter((c) => c !== canJump && c !== launched).sort((a, b) => sat(b) - sat(a));
+  const pool = [...free, ...raw.filter((c) => !free.includes(c))];
+  if (!pool.length) pool.push(visible(mixColor(bg, fg, 0.55)));
+  const el = (i) => pool[i % pool.length];
+  // The exit portal must differ from the entry; with a single color, a lighter tint of it.
+  const exit = pool.length > 1 ? (el(3) === el(2) ? el(4) : el(3)) : mixColor(el(2), 0xffffff, 0.45);
   return {
     name: p.name,
     canJump,
@@ -151,9 +171,10 @@ export function expand(p) {
     star,
     heart,
     hazard: cantJump, // warm means "danger / not now"
-    bouncy: launched, // elements that launch you share the launch color
-    portalBlue: canJump,
-    portalYellow: star,
+    bouncy: el(0),
+    elevator: el(1),
+    portalBlue: el(2), // the entry
+    portalYellow: exit,
     bg,
     door: bg,
     ink: fg,
