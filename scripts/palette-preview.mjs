@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { FAMILIES, expand } from '../src/palettes.js';
+import { EXPANDED } from '../src/palettes.js';
 
 const OUT = resolve('palette-preview');
 const TILE_W = 300;
@@ -129,6 +129,8 @@ function tile(ctx, P, next, name) {
   // players: red (no jumps) mid-air with a trail; blue (can jump) aiming with the arrow
   for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(160 + i * 9, 330 + i * 11, 13 - i * 1.5, 0, 7); ctx.fillStyle = rgba(P.cantJump, 0.22 - i * 0.03); ctx.fill(); }
   ctx.beginPath(); ctx.arc(152, 320, 14, 0, 7); fillInk(ctx, P.cantJump, ink, 3);
+  // launched (invincible): see-through
+  ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.arc(262, 410, 14, 0, 7); fillInk(ctx, P.launched, ink, 3); ctx.globalAlpha = 1;
   const px = 80, py = 456, ax = 0.55, ay = -0.835, nx = -ay, ny = ax;
   const at = (al, sd) => [px + ax * al + nx * sd, py + ay * al + ny * sd];
   const arrow = (gr) => [at(20 - gr, 2.5 + gr), at(56, 4.5 + gr), at(56 - gr / 2, 11 + gr * 1.6), at(71 + gr * 1.8, 0), at(56 - gr / 2, -11 - gr * 1.6), at(56, -4.5 - gr), at(20 - gr, -2.5 - gr)];
@@ -165,15 +167,12 @@ for (const c of document.querySelectorAll('canvas')) {
 `;
 
 mkdirSync(OUT, { recursive: true });
-for (const [key, fam] of Object.entries(FAMILIES)) {
-  const secs = fam.sections;
-  const tiles = secs
-    .map((s, i) => {
-      const data = { p: expand(s, key), next: expand(secs[(i + 1) % secs.length], key), name: `${i + 1}. ${s.name}` };
-      return `<canvas width="${TILE_W}" height="${TILE_H}" data-p='${JSON.stringify(data)}'></canvas>`;
-    })
-    .join('');
-  const rows = Math.ceil(secs.length / COLS);
+{
+  const tiles = EXPANDED.map((p, i) => {
+    const data = { p, next: EXPANDED[(i + 1) % EXPANDED.length], name: `${i + 1}. ${p.name}` };
+    return `<canvas width="${TILE_W}" height="${TILE_H}" data-p='${JSON.stringify(data).replace(/'/g, '&#39;')}'></canvas>`;
+  }).join('');
+  const rows = Math.ceil(EXPANDED.length / COLS);
   const width = COLS * TILE_W + (COLS + 1) * GAP;
   const height = rows * TILE_H + (rows + 1) * GAP + 44;
   const html = `<!doctype html><meta charset="utf-8"><style>
@@ -181,10 +180,10 @@ body{margin:0;background:#16161c;font:bold 18px Segoe UI,sans-serif;color:#eee}
 h1{font-size:18px;margin:0;padding:14px ${GAP}px 0}
 .g{display:grid;grid-template-columns:repeat(${COLS},${TILE_W}px);gap:${GAP}px;padding:${GAP}px}
 canvas{border-radius:10px}
-</style><h1>${fam.label}</h1><div class="g">${tiles}</div><script>${pageScript}</script>`;
-  const file = resolve(OUT, `${key}.html`);
+</style><h1>All palettes</h1><div class="g">${tiles}</div><script>${pageScript}</script>`;
+  const file = resolve(OUT, 'palettes.html');
   writeFileSync(file, html);
-  const png = resolve(OUT, `${key}.png`);
+  const png = resolve(OUT, 'palettes.png');
   execFileSync(browser, ['--headless=new', '--disable-gpu', '--hide-scrollbars', `--window-size=${width},${height}`, `--screenshot=${png}`, pathToFileURL(file).href], { stdio: 'ignore', timeout: 60000 });
   console.log(png);
 }

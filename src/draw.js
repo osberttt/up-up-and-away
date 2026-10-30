@@ -1,31 +1,29 @@
 import * as C from './config.js';
 import { hash01 } from './rng.js';
 import { platformX, hazardPos, heartPos, doorHeight, elevatorOffset } from './tower.js';
-import { FAMILIES, FAMILY, OBJECTS, expand, mixColor } from './palettes.js';
+import { sectionPalette, mixColor } from './palettes.js';
 
 const TAU = Math.PI * 2;
 const OUTLINE = 2.5; // ink outline around every object
 
-export const HEART = OBJECTS.heart;
-export const STAR = OBJECTS.star;
-const LAUNCHED = 0xa24dff; // the player while an element's launch makes it invincible
-export const portalColor = (pt) => (pt.color === 'blue' ? OBJECTS.portalBlue : OBJECTS.portalYellow);
+export const portalColor = (pt, col) => (pt.color === 'blue' ? col.portalBlue : col.portalYellow);
 export const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
 
-// Section n of the tower (above door n) takes palette entry n, starting from a daily offset.
+// Section n of the tower (above door n) follows the planned palette journey (see palettes.js).
 // Its background is the color of the door that opens it.
 export function palette(tower, section) {
-  const secs = FAMILIES[FAMILY].sections;
-  return expand(secs[(Math.floor(tower.hue * secs.length) + section) % secs.length]);
+  return sectionPalette(section);
 }
 
-// The section palette, fading from the previous one for a moment after a door opens.
+const FADE_MS = 2500; // a slow fade, so a door is a change of light, not a cut
+
+// The section palette, fading from the previous one for a while after a door.
 function currentPalette(sc) {
-  const k = Math.min(1, (sc.time.now - sc.colT) / 1200);
+  const k = Math.min(1, (sc.time.now - sc.colT) / FADE_MS);
   if (k >= 1) return sc.colTo;
   const e = k * k * (3 - 2 * k);
   const out = {};
-  for (const key in sc.colTo) out[key] = mixColor(sc.colFrom[key], sc.colTo[key], e);
+  for (const key in sc.colTo) out[key] = typeof sc.colTo[key] === 'number' ? mixColor(sc.colFrom[key], sc.colTo[key], e) : sc.colTo[key];
   return out;
 }
 
@@ -241,7 +239,7 @@ function drawStar(sc, g, st, col) {
   const bob = Math.sin(t * 3 + st.x) * 3;
   g.lineStyle(1.5, col.ink, 0.18).strokeCircle(st.x, st.y + bob, C.STAR_RADIUS);
   g.fillStyle(0xffffff, 0.25).fillCircle(st.x, st.y + bob, 18);
-  inkStar(g, st.x, st.y + bob, 12, 5, -Math.PI / 2 + Math.sin(t * 2) * 0.15, 0.45, STAR, col.ink);
+  inkStar(g, st.x, st.y + bob, 12, 5, -Math.PI / 2 + Math.sin(t * 2) * 0.15, 0.45, col.star, col.ink);
 }
 
 // A door is drawn in the color of the section above it (the background you get by passing it).
@@ -374,7 +372,7 @@ function drawFunnel(sc, g, f, col) {
 // One circle with a border. Particles stream into the blue portal and out of the yellow one.
 function drawPortal(sc, g, pt, col) {
   if (pt.gone) return;
-  const c = portalColor(pt);
+  const c = portalColor(pt, col);
   const R = C.PORTAL_R;
   const pulse = 1 + 0.04 * Math.sin(sc.simT * 5 + pt.x);
   g.fillStyle(c, 0.25).fillCircle(pt.x, pt.y, R * pulse + 7);
@@ -402,8 +400,9 @@ function drawPickup(sc, g, ht, col) {
   inkHeart(g, x, y - 1, s, col.heart, col.ink);
 }
 
-// Purple while launched by an element, else blue when a jump is ready, red while it cools down.
-const playerColor = (sc) => (sc.player.launched || sc.player.elevator ? LAUNCHED : sc.jumpsLeft() > 0 ? OBJECTS.canJump : OBJECTS.cantJump);
+// From the palette: the launch color while an element makes you invincible, else a cool color
+// when a jump is ready and a warm one while it cools down.
+const playerColor = (sc) => (sc.player.launched || sc.player.elevator ? sc.col.launched : sc.jumpsLeft() > 0 ? sc.col.canJump : sc.col.cantJump);
 
 function drawTrail(sc, g) {
   const tr = sc.trail;

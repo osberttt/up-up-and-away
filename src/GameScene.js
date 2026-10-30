@@ -5,7 +5,7 @@ import { integrate, substeps, launchSpeed, previewPath, MIN_X, MAX_X } from './p
 import { dayKey } from './rng.js';
 import * as Save from './save.js';
 import { sfx, unlockAudio, setMuted, buzz } from './audio.js';
-import { drawWorld, palette, portalColor, hex, tint, STAR } from './draw.js';
+import { drawWorld, palette, portalColor, hex, tint } from './draw.js';
 import { Hud, Menu, label } from './ui.js';
 
 const STEP = 1 / 120;
@@ -69,7 +69,7 @@ export class GameScene extends Phaser.Scene {
     this.height = this.heightOf(this.player.y);
     this.nextDoor = nextDoorIndex(this.save.best);
     this.newRun();
-    this.colTo = this.colFrom = this.col = palette(this.tower, this.nextDoor - 1);
+    this.colTo = this.colFrom = this.col = palette(this.tower, this.runDoor - 1);
     this.colT = 0;
 
     const cam = this.cameras.main;
@@ -350,7 +350,7 @@ export class GameScene extends Phaser.Scene {
       this.elementScore(st.x, st.y, st);
       sfx.star();
       buzz(8);
-      this.burst(st.x, st.y, STAR, 10, 180);
+      this.burst(st.x, st.y, this.col.star, 10, 180);
     }
   }
 
@@ -527,7 +527,7 @@ export class GameScene extends Phaser.Scene {
       if (!to) return;
       pl.warp = { to, x0: pl.x, y0: pl.y, x1: to.x, y1: to.y, t: 0, ang: Math.atan2(to.y - pl.y, to.x - pl.x) };
       this.elementScore(pl.x, pl.y, pt);
-      this.burst(pl.x, pl.y, portalColor(pt), 10, 200);
+      this.burst(pl.x, pl.y, portalColor(pt, this.col), 10, 200);
       sfx.portal();
       buzz(15);
       return;
@@ -551,7 +551,7 @@ export class GameScene extends Phaser.Scene {
     // No momentum carried over: a small push straight up, however you went in.
     Object.assign(pl, { warp: null, portalT: 0.3 });
     this.launch(0, -C.PORTAL_EXIT);
-    this.burst(pl.x, pl.y, portalColor(w.to), 10, 200);
+    this.burst(pl.x, pl.y, portalColor(w.to, this.col), 10, 200);
   }
 
   // Hearts start a HEART_LIFE countdown the first time they are on screen, then vanish.
@@ -704,6 +704,7 @@ export class GameScene extends Phaser.Scene {
     this.runT = 0; // a death starts a new run
     this.height = 0;
     this.newRun();
+    this.setPalette(0);
     this.cameras.main.scrollY = this.cameraTarget();
     this.hud.announce('BACK TO 0m');
     sfx.respawn();
@@ -728,11 +729,16 @@ export class GameScene extends Phaser.Scene {
       this.popText(pl.x, pl.y + 10, `${doorHeight(this.runDoor)}m in ${secs.toFixed(1)}s`, 14, 0xffffff, 0.75);
       this.runDoor++;
       this.doorT = this.runT;
+      // The tower takes on the palette of the section above the door just reached.
+      this.setPalette(this.runDoor - 1);
       if (pl.hp < C.MAX_HP) {
+        const healed = C.MAX_HP - pl.hp;
         pl.hp = C.MAX_HP;
         this.dirty = true;
         sfx.heart();
-        this.burst(pl.x, pl.y, this.col.heart, 14, 220);
+        this.hud.refilled();
+        this.popText(pl.x, pl.y - 70, `HP FULL  +${healed}♥`, 16, this.colTo.heart);
+        this.burst(pl.x, pl.y, this.colTo.heart, 18, 240);
       }
     }
     // Today's best height only decides which doors are open; it isn't the score.
@@ -746,12 +752,17 @@ export class GameScene extends Phaser.Scene {
         sfx.door();
         buzz(30);
         this.nextDoor++;
-        // The tower takes on the color of the door just passed.
-        this.colFrom = this.col;
-        this.colTo = palette(this.tower, this.nextDoor - 1);
-        this.colT = this.time.now;
       }
     }
+  }
+
+  // Fades the colors to section n's palette.
+  setPalette(n) {
+    const to = palette(this.tower, n);
+    if (to === this.colTo) return;
+    this.colFrom = this.col;
+    this.colTo = to;
+    this.colT = this.time.now;
   }
 
   // ---------------------------------------------------------------- camera & effects
@@ -809,7 +820,7 @@ export class GameScene extends Phaser.Scene {
         const a = Math.random() * Math.PI * 2;
         const cx = Math.cos(a);
         const cy = Math.sin(a);
-        const color = portalColor(pt);
+        const color = portalColor(pt, this.col);
         if (pt.color === 'blue') fx.push({ x: pt.x + cx * (R + 24), y: pt.y + cy * (R + 24), vx: -cx * 75, vy: -cy * 75, life: 0.32, max: 0.32, color });
         else fx.push({ x: pt.x + cx * (R - 4), y: pt.y + cy * (R - 4), vx: cx * 55, vy: cy * 55, life: 0.55, max: 0.55, color });
       }
@@ -849,7 +860,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   scorePop(x, y, pts) {
-    this.popText(x, y, `+${pts}`, pts >= 100 ? 22 : 18, STAR);
+    this.popText(x, y, `+${pts}`, pts >= 100 ? 22 : 18, this.col.star);
   }
 
   // The chain word, small, just above the "+n". Better words are a touch bigger.

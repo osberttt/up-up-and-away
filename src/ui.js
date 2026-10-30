@@ -2,7 +2,7 @@ import * as C from './config.js';
 import { formatDay, parseDay, shiftDay } from './rng.js';
 import { doorHeight } from './tower.js';
 import { sfx, setMuted } from './audio.js';
-import { palette, drawHeart, inkHeart, tint, hex, HEART, STAR } from './draw.js';
+import { palette, drawHeart, inkHeart, tint, hex } from './draw.js';
 const BAR_W = 120;
 
 export function label(scene, x, y, text, size, alpha = 1, fixed = true) {
@@ -56,7 +56,7 @@ export class Hud {
     this.scoreText.setScale(1 + 0.25 * p * p);
     if (p > 0 && !this.gold) {
       this.gold = true;
-      this.scoreText.setColor(hex(STAR)).setStroke(hex(ink), 6);
+      this.scoreText.setColor(hex(col.star)).setStroke(hex(ink), 6);
       this.scoreText._tint = null; // so tint() recolors it afterwards
     } else if (p === 0 && this.gold) {
       this.gold = false;
@@ -83,12 +83,17 @@ export class Hud {
       this.hpPulse = 1;
     }
     this.hpPulse = Math.max(0, this.hpPulse - dt * 3);
+    this.refill = Math.max(0, (this.refill || 0) - dt / 1.1);
 
     const g = this.g;
     g.clear();
     for (let i = 0; i < C.MAX_HP; i++) {
       const x = 32 + i * 30;
-      if (i < player.hp) inkHeart(g, x, 42, 10 * (1 + 0.25 * this.hpPulse), HEART, ink);
+      // After a refill each heart bumps up in turn, left to right, with a ring spreading from it.
+      const q = this.refill > 0 ? Math.max(0, Math.min(1, (1 - this.refill) * 2.6 - i * 0.35)) : 0;
+      const bump = Math.sin(q * Math.PI);
+      if (bump > 0) g.lineStyle(2.5, col.heart, bump).strokeCircle(x, 42, 12 + 14 * q);
+      if (i < player.hp) inkHeart(g, x, 42, 10 * (1 + 0.25 * this.hpPulse + 0.55 * bump), col.heart, ink);
       else {
         g.fillStyle(ink, 0.22);
         drawHeart(g, x, 42, 10);
@@ -106,6 +111,11 @@ export class Hud {
     g.fillStyle(ink, 0.8);
     g.fillRoundedRect(C.W - 54, 31, 7, 24, 2);
     g.fillRoundedRect(C.W - 41, 31, 7, 24, 2);
+  }
+
+  // Hearts refilled at a door: plays the bump-and-ring wave over the HUD hearts.
+  refilled() {
+    this.refill = 1;
   }
 
   // A score gain makes the HUD number swell; bigger gains swell it more.
