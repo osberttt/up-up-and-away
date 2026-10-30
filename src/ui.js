@@ -53,7 +53,7 @@ export class Hud {
     }
     this.scorePunch = Math.max(0, (this.scorePunch || 0) - dt * 2.5);
     const p = this.scorePunch;
-    this.scoreText.setScale(1 + 0.45 * p * p);
+    this.scoreText.setScale(1 + 0.25 * p * p);
     if (p > 0 && !this.gold) {
       this.gold = true;
       this.scoreText.setColor(hex(STAR)).setStroke(hex(ink), 6);
@@ -110,17 +110,17 @@ export class Hud {
 
   // A score gain makes the HUD number swell; bigger gains swell it more.
   punch(pts) {
-    this.scorePunch = Math.min(1, Math.max(this.scorePunch || 0, 0.6 + pts / 400));
+    this.scorePunch = Math.min(1, Math.max(this.scorePunch || 0, 0.35 + pts / 600));
   }
 
-  announce(text) {
-    this.queue.push(text);
+  announce(text, color = 0xffffff) {
+    this.queue.push({ text, color });
     if (!this.busy) this.next();
   }
 
   next() {
-    const text = this.queue.shift();
-    if (text === undefined) {
+    const item = this.queue.shift();
+    if (item === undefined) {
       this.busy = false;
       return;
     }
@@ -128,7 +128,7 @@ export class Hud {
     const b = this.banner;
     const tweens = this.sc.tweens;
     tweens.killTweensOf(b);
-    b.setText(text).setStroke(hex(this.sc.col.ink), 8).setAlpha(1).setScale(0.6);
+    b.setText(item.text).setColor(hex(item.color)).setStroke(hex(this.sc.col.ink), 8).setAlpha(1).setScale(0.6);
     tweens.add({ targets: b, scale: 1, duration: 260, ease: 'Back.Out' });
     tweens.add({ targets: b, alpha: 0, delay: 850, duration: 450, onComplete: () => this.next() });
   }

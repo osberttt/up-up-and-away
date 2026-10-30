@@ -168,18 +168,31 @@ export class GameScene extends Phaser.Scene {
     this.doorT = this.runT; // when the run reached its last door (or started)
     this.scored = new Set(); // funnels, portals, elevators, bouncy pads and stars already scored this run
     this.beatBest = this.save.score === 0; // no NEW BEST banner on a day's first run
+    this.chain = 0; // elements hit in a row, each within CHAIN_WINDOW of the last
+    this.chainT = -Infinity;
   }
 
-  // Adds points to the run, with a floating "+n" at (x, y) unless x is null.
+  // An element hit (pad, star, heart, funnel, elevator, portal): SCORE_ELEMENT points and a word
+  // that climbs with the chain. `once` (the element) scores only once per run.
+  elementScore(x, y, once = null) {
+    if (once && this.scored.has(once)) return;
+    this.chain = this.runT - this.chainT <= C.CHAIN_WINDOW ? this.chain + 1 : 1;
+    this.chainT = this.runT;
+    const word = C.CHAIN_WORDS[Math.min(this.chain, C.CHAIN_WORDS.length) - 1];
+    this.addScore(C.SCORE_ELEMENT, x, y, once, word);
+  }
+
+  // Adds points to the run, with a floating "+n" at (x, y), and `word` above it if given.
   // `once` scores an object only once per run.
-  addScore(pts, x, y, once = null) {
+  addScore(pts, x, y, once = null, word = null) {
     if (once) {
       if (this.scored.has(once)) return;
       this.scored.add(once);
     }
     this.score += pts;
     this.hud.punch(pts);
-    if (x != null) this.scorePop(x, y - 30, pts);
+    this.scorePop(x, y - 30, pts);
+    if (word) this.wordPop(x, y - 80, word);
     const s = this.save;
     if (this.score > s.score) {
       s.score = this.score;
@@ -334,7 +347,7 @@ export class GameScene extends Phaser.Scene {
     const rr = C.STAR_RADIUS ** 2;
     for (const st of this.tower.starsIn(pl.y - C.STAR_RADIUS, pl.y + C.STAR_RADIUS, this.nearItems)) {
       if (this.scored.has(st) || (pl.x - st.x) ** 2 + (pl.y - st.y) ** 2 > rr) continue;
-      this.addScore(C.SCORE_STAR, st.x, st.y, st);
+      this.elementScore(st.x, st.y, st);
       sfx.star();
       buzz(8);
       this.burst(st.x, st.y, STAR, 10, 180);
@@ -365,14 +378,14 @@ export class GameScene extends Phaser.Scene {
 
   // Solid platforms: every side blocks. Doors and crumbling platforms (and every platform while
   // launched) are one-way: you pass up through them and land on top.
-  // Elevators are solid U boxes while they wait at the bottom; landing on the floor inside rides one.
+  // Elevators aren't solid: falling onto one from above (crossing its rim) rides it.
   collide(prevY) {
     const pl = this.player;
     const R = C.PLAYER_R;
     for (const p of this.tower.platformsIn(pl.y - 60, pl.y + 60, this.near)) {
       if (pl.ground || !this.solid(p)) continue;
       const px = platformX(p, this.simT);
-      if (p.type === 'door' || p.type === 'crumble' || pl.launched) {
+      if (!C.SOLID_PLATFORMS || p.type === 'door' || p.type === 'crumble' || pl.launched) {
         if (pl.vy > 0 && prevY + R <= p.y + 0.01 && pl.y + R >= p.y && Math.abs(pl.x - px) <= p.w / 2 + R * 0.4) this.land(p, px);
         continue;
       }
@@ -383,13 +396,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (pl.launched || pl.ground) return;
     for (const e of this.tower.elevatorsIn(pl.y - 120, pl.y + 120, this.nearItems)) {
-      if (!elevatorIdle(e, this.simT)) continue;
-      const half = C.ELEV_INNER / 2;
-      const Wl = C.ELEV_WALL;
-      const top = e.y - C.ELEV_DEPTH;
-      this.pushOut(e.x - half - Wl, top, e.x - half, e.y);
-      this.pushOut(e.x + half, top, e.x + half + Wl, e.y);
-      if (this.pushOut(e.x - half - Wl, e.y - Wl, e.x + half + Wl, e.y) === 'top' && Math.abs(pl.x - e.x) < half) {
+      if (!elevatorIdle(e, this.simT) || pl.vy <= 0) continue;
+      const rim = e.y - C.ELEV_DEPTH;
+      if (prevY + R <= rim && pl.y + R >= rim && Math.abs(pl.x - e.x) <= C.ELEV_INNER / 2 + C.ELEV_WALL + R * 0.4) {
         this.enterElevator(e);
         return;
       }
@@ -446,7 +455,7 @@ export class GameScene extends Phaser.Scene {
     pl.vx = pl.vy = 0;
     this.recordFall();
     this.trail.length = 0;
-    this.addScore(C.SCORE_ELEVATOR, pl.x, pl.y, e);
+    this.elementScore(pl.x, pl.y, e);
     sfx.funnel();
     buzz(12);
   }
@@ -461,7 +470,7 @@ export class GameScene extends Phaser.Scene {
       if (k < 0 || k > 1 || Math.abs(pl.x - f.x) > half + C.PLAYER_R * 0.3) continue;
       pl.funnel = { f, pts: [pl.x, pl.y, ...f.tube], seg: 0, along: 0 };
       pl.vx = pl.vy = 0;
-      this.addScore(C.SCORE_FUNNEL, pl.x, pl.y, f);
+      this.elementScore(pl.x, pl.y, f);
       this.trail.length = 0;
       sfx.funnel();
       buzz(12);
@@ -517,7 +526,7 @@ export class GameScene extends Phaser.Scene {
       const to = pt.pair;
       if (!to) return;
       pl.warp = { to, x0: pl.x, y0: pl.y, x1: to.x, y1: to.y, t: 0, ang: Math.atan2(to.y - pl.y, to.x - pl.x) };
-      this.addScore(C.SCORE_PORTAL, pl.x, pl.y, pt);
+      this.elementScore(pl.x, pl.y, pt);
       this.burst(pl.x, pl.y, portalColor(pt), 10, 200);
       sfx.portal();
       buzz(15);
@@ -573,7 +582,7 @@ export class GameScene extends Phaser.Scene {
         ht.gone = true;
         ht.goneT = this.simT;
         pl.hp++;
-        this.addScore(C.SCORE_HEART, x, y);
+        this.elementScore(x, y);
         this.dirty = true;
         sfx.heart();
         buzz(15);
@@ -601,7 +610,7 @@ export class GameScene extends Phaser.Scene {
     if (p.type === 'bouncy') {
       this.launch(pl.vx, -clamp(impact * 1.3, C.BOUNCE_MIN, C.BOUNCE_MAX));
       p.squashT = this.simT;
-      this.addScore(C.SCORE_BOUNCY, pl.x, p.y, p);
+      this.elementScore(pl.x, p.y, p);
       sfx.bounce();
       this.burst(pl.x, p.y, this.col.bouncy, 10, 280, 0, -1);
       return;
@@ -713,9 +722,10 @@ export class GameScene extends Phaser.Scene {
     // fast you got there from the previous one, and refills all hearts.
     while (h >= doorHeight(this.runDoor)) {
       const secs = this.runT - this.doorT;
-      const pts = Math.max(C.DOOR_SCORE_MIN, Math.round(C.DOOR_SCORE_MAX - C.DOOR_SCORE_PER_SEC * secs));
-      this.hud.announce(`${doorHeight(this.runDoor)}m  +${pts}`);
-      this.addScore(pts, null, null); // the banner shows the points
+      const tier = C.DOOR_TIERS.find((t) => secs < t.under);
+      this.hud.announce(`${tier.word}!`, C.WORD_COLORS[tier.word]);
+      this.addScore(tier.pts, pl.x, pl.y);
+      this.popText(pl.x, pl.y + 10, `${doorHeight(this.runDoor)}m in ${secs.toFixed(1)}s`, 14, 0xffffff, 0.75);
       this.runDoor++;
       this.doorT = this.runT;
       if (pl.hp < C.MAX_HP) {
@@ -824,23 +834,28 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // A big "+n" that pops in with an overshoot and a little tilt, sparkles, then floats up and fades.
-  // Bigger points get a bigger number.
-  scorePop(x, y, pts) {
-    const size = Math.round(34 + Math.min(22, pts / 4));
-    x = clamp(x, C.WALL + 50, C.W - C.WALL - 50);
-    const t = label(this, x, y, `+${pts}`, size, 1, false)
-      .setColor(hex(STAR))
-      .setStroke(hex(this.col.ink), 8)
-      .setShadow(0, 4, 'rgba(0,0,0,0.3)', 8)
+  // Damage-number style: small text left where it happened. A quick nudge in, a short drift up
+  // with a little sideways scatter, and a fade. Stays out of the way of play.
+  popText(x, y, text, size, color, alpha = 0.9) {
+    x = clamp(x + Phaser.Math.Between(-14, 14), C.WALL + 40, C.W - C.WALL - 40);
+    const t = label(this, x, y, text, size, alpha, false)
+      .setColor(hex(color))
+      .setStroke(hex(this.col.ink), 4)
       .setDepth(45)
-      .setScale(0.2)
-      .setAngle(Phaser.Math.Between(-10, 10));
-    this.tweens.add({ targets: t, scale: 1.3, duration: 140, ease: 'Back.Out' });
-    this.tweens.add({ targets: t, scale: 1, angle: 0, delay: 140, duration: 220, ease: 'Sine.Out' });
-    this.tweens.add({ targets: t, y: y - 90, duration: 1100, ease: 'Cubic.Out' });
-    this.tweens.add({ targets: t, alpha: 0, delay: 750, duration: 350, onComplete: () => t.destroy() });
-    this.burst(x, y, STAR, 10 + Math.min(10, pts / 8), 240);
+      .setScale(1.2);
+    this.tweens.add({ targets: t, scale: 1, duration: 120, ease: 'Quad.Out' });
+    this.tweens.add({ targets: t, x: x + Phaser.Math.Between(-12, 12), y: y - 36, duration: 700, ease: 'Cubic.Out' });
+    this.tweens.add({ targets: t, alpha: 0, delay: 350, duration: 350, onComplete: () => t.destroy() });
+  }
+
+  scorePop(x, y, pts) {
+    this.popText(x, y, `+${pts}`, pts >= 100 ? 22 : 18, STAR);
+  }
+
+  // The chain word, small, just above the "+n". Better words are a touch bigger.
+  wordPop(x, y, word) {
+    const rank = Math.max(0, C.CHAIN_WORDS.indexOf(word));
+    this.popText(x, y + 22, word, 13 + rank, C.WORD_COLORS[word] ?? 0xffffff, 0.8);
   }
 
   floatText(x, y, text) {

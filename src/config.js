@@ -25,6 +25,7 @@ export const HIT_STUN = 1; // no jumping for this long after a hazard hit, so yo
 
 // Platforms are solid on every side (doors stay one-way). They are rare: the generator plans a
 // path of points up the tower and only this share of them becomes a platform (bouncy pads always do).
+export const SOLID_PLATFORMS = false; // switch: false makes every platform one-way, like before
 export const PLATFORM_CHANCE = 0.5;
 export const SIDE_LEDGE_CHANCE = 0.18;
 export const PLAT_THICK = 12; // collision height of a platform below its top
@@ -76,25 +77,44 @@ export const RESPAWN_DELAY = 0.9;
 
 // Everything appears from the start; these are the odds per main platform.
 // Chance of a 1st, 2nd, 3rd... spike or saw beside the path in each gap (each rolled only if the previous one was).
-export const SPIKE_CHANCES = [0.75, 0.35, 0.1];
+export const SPIKE_CHANCES = [0.45, 0.2, 0.05];
 export const SAW_CHANCE = 0.4; // share of those that move up and down
+export const SPIKE_CORRIDOR = 80; // px kept clear each side of the route line
 export const WALL_SPIKE_CHANCE = 0.18;
 export const FUNNEL_CHANCE = 0.12;
 export const PORTAL_CHANCE = 0.15;
 
 // Score (per run; a death starts over). Height itself scores nothing.
-// Using a funnel, portal or bouncy pad scores once per object per run; every heart taken scores.
-export const SCORE_BOUNCY = 10;
-export const SCORE_HEART = 25;
-export const SCORE_FUNNEL = 50;
-export const SCORE_PORTAL = 75;
-export const SCORE_ELEVATOR = 60;
-export const SCORE_STAR = 20;
-// Reaching a door: DOOR_SCORE_MAX minus DOOR_SCORE_PER_SEC for every second since the
-// previous door (or the start of the run), never below DOOR_SCORE_MIN.
-export const DOOR_SCORE_MAX = 1500;
-export const DOOR_SCORE_PER_SEC = 50;
-export const DOOR_SCORE_MIN = 100;
+// Every element is worth the same: bouncy pad, star, heart, funnel, elevator, portal. Each pad,
+// star, funnel, elevator and portal scores once per run; every heart taken scores.
+export const SCORE_ELEMENT = 10;
+// Elements hit within CHAIN_WINDOW seconds of each other form a chain; the word that pops up
+// climbs with it (1st NICE, 2nd GOOD, ... 5th and on FANTASTIC).
+export const CHAIN_WINDOW = 2.5;
+export const CHAIN_WORDS = ['NICE', 'GOOD', 'GREAT', 'AMAZING', 'FANTASTIC'];
+// Reaching a door scores by the seconds since the previous door (or the run's start):
+// the first tier whose limit the time is under.
+export const DOOR_TIERS = [
+  { under: 5, pts: 300, word: 'FANTASTIC' },
+  { under: 7, pts: 250, word: 'AMAZING' },
+  { under: 10, pts: 200, word: 'GREAT' },
+  { under: 15, pts: 150, word: 'GOOD' },
+  { under: 20, pts: 100, word: 'NICE' },
+  { under: 25, pts: 75, word: 'OK' },
+  { under: 30, pts: 50, word: 'SLOW' },
+  { under: Infinity, pts: 25, word: 'PHEW' },
+];
+// Pop-up word colors; brighter for better words.
+export const WORD_COLORS = {
+  FANTASTIC: 0xff4fd8,
+  AMAZING: 0xb26bff,
+  GREAT: 0x3fd0ff,
+  GOOD: 0x55e07a,
+  NICE: 0xffffff,
+  OK: 0xffffff,
+  SLOW: 0xffb36b,
+  PHEW: 0xffb36b,
+};
 
 export const PX_PER_M = 40;
 

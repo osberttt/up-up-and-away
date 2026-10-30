@@ -439,11 +439,10 @@ export class Tower {
     this.addPlatform({ x, y, w, type: crumble ? 'crumble' : 'normal' });
   }
 
-  // Spiky ball beside the path, never in the column between `from` and `to`.
+  // Spiky ball anywhere across the width, except a corridor (SPIKE_CORRIDOR each side) along the
+  // straight line from `from` to `to`, so the route always has a gap through.
   addSpike(from, to) {
     const r = this.rng;
-    const x0 = Math.min(from.x - from.w / 2, to.x - to.w / 2) - 40;
-    const x1 = Math.max(from.x + from.w / 2, to.x + to.w / 2) + 40;
     for (let i = 0; i < 8; i++) {
       const rad = r.range(16, 26);
       const amp = r.chance(C.SAW_CHANCE) ? r.range(40, 90) : 0;
@@ -452,7 +451,10 @@ export class Tower {
       const yMax = from.y - rad - amp - 40;
       if (yMax <= yMin) return;
       const y = r.range(yMin, yMax);
-      if (x + rad > x0 && x - rad < x1) continue;
+      // Path x at this height; a saw is checked over its whole sweep.
+      const pathX = (yy) => lerp(from.x, to.x, clamp((from.y - yy) / (from.y - to.y), 0, 1));
+      const near = Math.min(Math.abs(x - pathX(y - amp)), Math.abs(x - pathX(y)), Math.abs(x - pathX(y + amp)));
+      if (near < C.SPIKE_CORRIDOR + rad) continue;
       if (this.platformNear(x, y, rad + 30, rad + amp + 60)) continue;
       if (this.doorNear(y, rad + amp + 70) !== null) continue;
       if (this.inZone(x, y, rad + amp + 30) || this.portalNear(x, y, rad + amp + 70)) continue;
