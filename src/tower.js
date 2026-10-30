@@ -1,5 +1,6 @@
 import * as C from './config.js';
 import { Rng, hashString, noise1 } from './rng.js';
+import { integrate } from './physics.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -55,6 +56,34 @@ export function elevatorIdle(e, t) {
   return e.rideT == null && (e.backT == null || t >= e.backT + C.ELEV_RETURN);
 }
 
+// A waiting bubble's position: drifting side to side.
+export function bubblePos(t, time) {
+  return [t.x + t.amp * Math.sin(time * t.speed + t.phase), t.y];
+}
+
+// A kite flying back and forth: [x, y] of the kite and [x, y] of the end of its tail.
+export function kitePos(t, time) {
+  const x = t.x + t.amp * Math.sin(time * t.speed + t.phase);
+  const y = t.y - C.KITE_TAIL + 8 * Math.sin(time * 2.3 + t.phase);
+  return [x, y, x + 6 * Math.sin(time * 4 + t.phase), y + C.KITE_TAIL];
+}
+
+// Where a kite carrying the player flies: ahead of it along its flight and a little above, the
+// tail down to the player.
+export function kiteTow(pl) {
+  const v = Math.hypot(pl.vx, pl.vy) || 1;
+  return [pl.x + (pl.vx / v) * 46, pl.y + (pl.vy / v) * 46 - C.KITE_TAIL * 0.7];
+}
+
+// Launch velocities of the kite and comet: fixed angles toward the middle of the screen (dir).
+export const kiteShot = (dir) => [dir * Math.cos(C.KITE_ANGLE) * C.KITE_SHOT, -Math.sin(C.KITE_ANGLE) * C.KITE_SHOT];
+export const cometShot = (dir) => [dir * Math.cos(C.COMET_ANGLE) * C.COMET_HIT, -Math.sin(C.COMET_ANGLE) * C.COMET_HIT];
+
+// A wind gust's strength now (0.75..1): it breathes, but always lifts hard.
+export function windGust(t, time) {
+  return 0.875 + 0.125 * Math.sin(time * 1.8 + t.phase);
+}
+
 // Hearts drift around their spot on slow, smooth noise.
 export function heartPos(ht, t) {
   const x = clamp(ht.x + 70 * noise1(ht.seed, t * 0.45), C.WALL + 24, C.W - C.WALL - 24);
@@ -63,6 +92,45 @@ export function heartPos(ht, t) {
 
 // Height (px) a launch at `speed` rises before it peaks.
 const riseOf = (speed) => (speed * speed) / (2 * C.GRAVITY);
+
+// Where an element's launch from (x, y) at (vx, vy) tops out, flown with the game's own physics
+// the way GameScene.launch does it (lighter gravity, scaled speed, wall bounces and all).
+function flightPeak(x, y, vx, vy) {
+  const k = Math.sqrt(C.LAUNCH_GRAVITY);
+  const b = { x, y, vx: vx * k, vy: vy * k };
+  for (let i = 0; i < 4000 && b.vy < 0; i++) integrate(b, 1 / 240, C.GRAVITY * C.LAUNCH_GRAVITY);
+  return { x: b.x, y: b.y };
+}
+
+// A rail's track: a curve from its start (x, y) that dips sideways then sweeps up, as points
+// with their running length. dir is 1 (to the right) or -1.
+export function railTrack(x, y, dir) {
+  const a = { x, y };
+  const c = { x: x + dir * C.RAIL_ACROSS * 0.65, y: y + C.RAIL_DIP };
+  const b = { x: x + dir * C.RAIL_ACROSS, y: y - C.RAIL_UP };
+  const pts = [];
+  const cum = [];
+  let len = 0;
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 24;
+    const p = { x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t * t * b.x, y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t * t * b.y };
+    if (i) len += Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y);
+    pts.push(p);
+    cum.push(len);
+  }
+  // Direction off the end: the curve's tangent there (from the control point to the end).
+  const tl = Math.hypot(b.x - c.x, b.y - c.y);
+  return { pts, cum, len, exit: { x: (b.x - c.x) / tl, y: (b.y - c.y) / tl } };
+}
+
+// Point a distance `s` along a rail's track.
+export function railAt(rail, s) {
+  const { pts, cum } = rail;
+  let i = 1;
+  while (i < pts.length - 1 && cum[i] < s) i++;
+  const k = clamp((s - cum[i - 1]) / (cum[i] - cum[i - 1] || 1), 0, 1);
+  return { x: lerp(pts[i - 1].x, pts[i].x, k), y: lerp(pts[i - 1].y, pts[i].y, k) };
+}
 
 // Buckets objects by vertical band so physics and drawing only touch what is near.
 class Grid {
@@ -138,8 +206,10 @@ class Bag {
 // previous one; some become platforms. Spikes keep out of a corridor along that route.
 // Elements come in planned chains: each is placed where the previous one's launch peaks.
 export class Tower {
-  constructor(day) {
+  // force (testing only): every chain element is this type, at any height.
+  constructor(day, { force = null } = {}) {
     this.day = day;
+    this.force = force;
     this.seed = hashString(`upupandaway:${day}`);
     this.rng = new Rng(this.seed);
     this.hue = this.rng.next();
@@ -159,10 +229,13 @@ export class Tower {
     this.elevGrid = new Grid(600);
     this.portals = [];
     this.portalGrid = new Grid(600);
+    // Balloons, bubbles, planets and rails: { kind, ... }, all in one list.
+    this.things = [];
+    this.thingGrid = new Grid(600);
     // Zones: 'element' boxes around elements, and 'clear' boxes around each chain hop (peak to
     // next element). Elements avoid element zones; spikes and platforms avoid both.
     this.zoneGrid = new Grid(600);
-    this.elementBag = new Bag(this.rng, C.ELEMENT_BAG);
+    this.lastType = null; // the chain element placed last (see pickElement)
     this.spikeBag = new Bag(this.rng, C.SPIKE_BAG);
     this.chain = null; // { target: {x, y}, left } while a chain is being laid out
     this.chainBreak = 1; // path steps until the next chain starts
@@ -237,6 +310,17 @@ export class Tower {
     return this.elevGrid.query(y0, y1, out);
   }
 
+  thingsIn(y0, y1, out) {
+    return this.thingGrid.query(y0, y1, out);
+  }
+
+  addThing(t, y0, y1) {
+    t.readyT = 0; // runtime: when it can be used again
+    this.things.push(t);
+    this.thingGrid.add(t, y0, y1);
+    return t;
+  }
+
   // Keep at least one screen of tower generated above y.
   ensureUpTo(y) {
     while (this.lastMain.y > y - C.H) this.step();
@@ -295,6 +379,9 @@ export class Tower {
 
     // A platform never sits on an element or across a chain hop: it stays a route point.
     if (type !== 'path' && this.inZone(x, y, w / 2, 'any')) type = 'path';
+    // Past the end it's space: nothing but the route, which only anchors the generator.
+    const space = -y / C.PX_PER_M > C.END_HEIGHT;
+    if (space) type = 'path';
     const p = { x, y, w, type };
     if (type === 'moving') {
       const amp = Math.min(r.range(50, 110), x - minC, maxC - x);
@@ -309,8 +396,10 @@ export class Tower {
     if (p.type !== 'path') this.addPlatform(p);
     this.lastMain = p;
 
+    if (space) return;
     if (r.chance(C.SIDE_LEDGE_CHANCE)) this.addSideLedge(from, p);
     this.layChain(from, p);
+    this.addWind(from, p);
     this.placeSpikes(from, p);
     this.addHeart(from, p);
     this.addStar(from, p);
@@ -323,22 +412,30 @@ export class Tower {
   layChain(from, to) {
     const r = this.rng;
     if (!this.chain) {
-      if (this.atStart(to.y) || --this.chainBreak > 0) return;
+      if (this.atStart(to.y) || -to.y / C.PX_PER_M >= C.END_HEIGHT || --this.chainBreak > 0) return;
       // Nothing unlocked yet at this height: no chain (progression, see ELEMENT_FROM).
-      if (this.elementBag.peek(this.unlockedAt(to.y)) === null) return;
+      const first = this.pickElement(to.y);
+      if (first === null) return;
       const spot = this.clearSpot(from, to, 60);
       if (!spot) return; // try again next step
-      this.chain = { target: spot, left: Math.floor(r.range(C.CHAIN_LENGTH[0], C.CHAIN_LENGTH[1] + 1)) };
+      this.chain = { target: spot, type: first, left: Math.floor(r.range(C.CHAIN_LENGTH[0], C.CHAIN_LENGTH[1] + 1)) };
       this.chainStats.chains++;
     }
     // The planned spot may be several gaps up; lay it once the route reaches that height.
     while (this.chain && this.chain.target.y >= to.y) {
       const t = this.chain.target;
-      // The bag's pick if it fits; otherwise another unlocked type, before the chain gives up.
+      // The planned type if it fits; otherwise another unlocked type, before the chain gives up.
       const ok = this.unlockedAt(t.y);
-      const type = this.elementBag.next(ok);
-      let peak = type && this.placeElement(type, t);
-      for (const alt of ['funnel', 'portal', 'bouncy', 'elevator']) if (!peak && alt !== type && ok(alt)) peak = this.placeElement(alt, t);
+      const type = this.chain.type;
+      let peak = this.placeElement(type, t);
+      if (peak) this.lastType = type;
+      // Newest unlocks first, so a fallback still feels like this stage.
+      const alts = Object.keys(C.ELEMENT_FROM).filter((k) => k !== 'wind').sort((a, b) => C.ELEMENT_FROM[b] - C.ELEMENT_FROM[a]);
+      for (const alt of alts) {
+        if (peak || alt === type || !ok(alt)) continue;
+        peak = this.placeElement(alt, t);
+        if (peak) this.lastType = alt;
+      }
       if (peak) this.chainStats.links++;
       else this.chainStats.failed++;
       if (!peak || --this.chain.left <= 0) {
@@ -348,8 +445,8 @@ export class Tower {
         return;
       }
       this.addPeakStar(peak);
-      // The next element is placed about at the peak's height, so unlock by that.
-      const nextType = this.elementBag.peek(this.unlockedAt(peak.y));
+      // The next element is placed about at the peak's height, so pick by that.
+      const nextType = this.pickElement(peak.y);
       if (nextType === null) {
         this.chain = null;
         this.chainBreak = Math.floor(r.range(C.CHAIN_BREAK[0], C.CHAIN_BREAK[1] + 1));
@@ -359,7 +456,29 @@ export class Tower {
       // Keep the hop from the peak to the next element free of spikes and platforms.
       this.addZone('clear', Math.min(peak.x, next.x) - 70, Math.min(peak.y, next.y) - 80, Math.max(peak.x, next.x) + 70, Math.max(peak.y, next.y) + 80);
       this.chain.target = next;
+      this.chain.type = nextType;
     }
+  }
+
+  // A weighted pick among the chain elements unlocked at height y (px): each starts at full weight
+  // when it unlocks and halves every ELEMENT_FADE m after, to at least ELEMENT_MIN_WEIGHT; the
+  // one just used counts ELEMENT_REPEAT as much. Null if none is unlocked.
+  pickElement(y) {
+    if (this.force) return this.force;
+    const m = -y / C.PX_PER_M;
+    const types = [];
+    let total = 0;
+    for (const [type, from] of Object.entries(C.ELEMENT_FROM)) {
+      if (type === 'wind' || m < from) continue;
+      let w = Math.max(C.ELEMENT_MIN_WEIGHT, 0.5 ** ((m - from) / C.ELEMENT_FADE));
+      if (type === this.lastType) w *= C.ELEMENT_REPEAT;
+      types.push([type, w]);
+      total += w;
+    }
+    if (!types.length) return null;
+    let roll = this.rng.next() * total;
+    for (const [type, w] of types) if ((roll -= w) <= 0) return type;
+    return types[types.length - 1][0];
   }
 
 // Where the next element goes, given the peak of the last launch and the next element's type:
@@ -380,7 +499,19 @@ export class Tower {
     for (let i = 0; i < 8; i++) {
       const x = clamp(t.x + (i ? r.range(-90, 90) : 0), C.WALL + 90, C.W - C.WALL - 90);
       const y = t.y + (i ? r.range(-60, 60) : 0);
-      const peak = type === 'bouncy' ? this.tryBouncy(x, y) : type === 'funnel' ? this.tryFunnel(x, y) : type === 'elevator' ? this.tryElevator(x, y) : this.tryPortal(x, y);
+      const tries = {
+        bouncy: this.tryBouncy,
+        funnel: this.tryFunnel,
+        elevator: this.tryElevator,
+        portal: this.tryPortal,
+        balloon: this.tryBalloon,
+        bubble: this.tryBubble,
+        planet: this.tryPlanet,
+        rail: this.tryRail,
+        kite: this.tryKite,
+        comet: this.tryComet,
+      };
+      const peak = tries[type].call(this, x, y);
       if (peak) return peak;
     }
     return null;
@@ -426,8 +557,7 @@ export class Tower {
     this.funnels.push(f);
     this.funnelGrid.add(f, top - 30, y + 10);
     this.addZone('element', x - half - 40, top - 40, x + half + 40, y + 40);
-    const px = clamp(x + vx * (-vy / C.GRAVITY), C.WALL + 60, C.W - C.WALL - 60);
-    return { x: px, y: top - rise };
+    return flightPeak(x, top, vx, vy);
   }
 
   // Elevator (y is the bottom of its floor): rides up `rise`, then fires you at ELEV_LAUNCH.
@@ -474,6 +604,118 @@ export class Tower {
     return { x: ex, y: ey - riseOf(C.PORTAL_EXIT) };
   }
 
+  // Balloon (y is where you hang, at the end of the string). Floats you up `rise`, then lets go
+  // with a push of BALLOON_EXIT.
+  tryBalloon(x, y) {
+    const top = y - C.BALLOON_STRING - 2 * C.BALLOON_R;
+    if (!this.roomFor(x, (y + top) / 2, C.BALLOON_R + 10, (y - top) / 2 + 10)) return null;
+    const rise = this.rng.range(...C.BALLOON_RISE);
+    this.addThing({ kind: 'balloon', x, y, rise }, top - 20, y + 20);
+    this.addZone('element', x - 50, top - 30, x + 50, y + 40);
+    this.addZone('clear', x - 70, y - rise - 40, x + 70, y);
+    return { x, y: y - rise - riseOf(C.BALLOON_EXIT) };
+  }
+
+  // Bubble (y is its middle). Floats you up `rise` unless you pop it sooner, then pushes you up
+  // at BUBBLE_EXIT. The chain plans for a full ride.
+  // The bubble drifts side to side (amp, within the walls); the chain plans from its middle.
+  tryBubble(x, y) {
+    const r = this.rng;
+    const R = C.BUBBLE_R;
+    const amp = Math.min(r.range(...C.BUBBLE_DRIFT), x - C.WALL - R - 10, C.W - C.WALL - R - 10 - x);
+    if (amp < 20 || !this.roomFor(x, y, R + amp + 10, R + 10)) return null;
+    const rise = r.range(...C.BUBBLE_RISE);
+    const speed = TAU / r.range(...C.BUBBLE_SWAY);
+    this.addThing({ kind: 'bubble', x, y, rise, amp, speed, phase: r.range(0, TAU) }, y - R - 20, y + R + 20);
+    this.addZone('element', x - amp - R - 30, y - R - 30, x + amp + R + 30, y + R + 30);
+    this.addZone('clear', x - amp - 70, y - rise - 40, x + amp + 70, y);
+    return { x, y: y - rise - riseOf(C.BUBBLE_EXIT) };
+  }
+
+  // Planet (x, y is its middle). You circle it on its ring; left alone, it flings you straight up
+  // from the side where the circling heads up: the left side when it spins clockwise (spin 1).
+  tryPlanet(x, y) {
+    const R = C.ORBIT_R + C.PLAYER_R;
+    if (x - R < C.WALL + 6 || x + R > C.W - C.WALL - 6) return null;
+    if (!this.roomFor(x, y, R, R)) return null;
+    const spin = this.rng.chance(0.5) ? 1 : -1;
+    this.addThing({ kind: 'planet', x, y, spin }, y - R - 20, y + R + 20);
+    this.addZone('element', x - R - 20, y - R - 20, x + R + 20, y + R + 20);
+    const rx = x + (spin > 0 ? -C.ORBIT_R : C.ORBIT_R);
+    const peakY = y - riseOf(C.ORBIT_EXIT);
+    this.addZone('clear', rx - 60, peakY, rx + 60, y);
+    return { x: rx, y: peakY };
+  }
+
+  // Rail (x, y is the start of the track). It runs the way it fits (toward the middle when both
+  // do) and flings you off the end along the track.
+  tryRail(x, y) {
+    const fitsRight = x + C.RAIL_ACROSS <= C.W - C.WALL - 20;
+    const fitsLeft = x - C.RAIL_ACROSS >= C.WALL + 20;
+    if (!fitsRight && !fitsLeft) return null;
+    const dir = fitsRight && fitsLeft ? (x < C.W / 2 ? 1 : -1) : fitsRight ? 1 : -1;
+    const track = railTrack(x, y, dir);
+    const xs = track.pts.map((p) => p.x);
+    const ys = track.pts.map((p) => p.y);
+    const x0 = Math.min(...xs);
+    const x1 = Math.max(...xs);
+    const y0 = Math.min(...ys);
+    const y1 = Math.max(...ys);
+    if (x0 < C.WALL + 20 || x1 > C.W - C.WALL - 20) return null;
+    if (!this.roomFor((x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2 + 10, (y1 - y0) / 2 + 10)) return null;
+    this.addThing({ kind: 'rail', x, y, dir, ...track }, y0 - 30, y1 + 30);
+    this.addZone('element', x0 - 30, y0 - 30, x1 + 30, y1 + 30);
+    // The flight off the end (you ride on top of the track), bounces off the walls included.
+    const end = track.pts[track.pts.length - 1];
+    const peak = flightPeak(end.x, end.y - C.PLAYER_R, track.exit.x * C.RAIL_EXIT, track.exit.y * C.RAIL_EXIT);
+    this.addZone('clear', Math.min(end.x, peak.x) - 60, peak.y, Math.max(end.x, peak.x) + 60, end.y);
+    return peak;
+  }
+
+  // Kite (x is the middle of its flight, y the end of its tail). Touching it carries you off at
+  // KITE_ANGLE toward the middle of the screen from where you touched it; the chain plans from the
+  // middle of its flight, so the real peak shifts sideways with where you caught it.
+  tryKite(x, y) {
+    const r = this.rng;
+    const amp = Math.min(r.range(...C.KITE_SPAN), x - C.WALL - 40, C.W - C.WALL - 40 - x);
+    if (amp < 60) return null;
+    const top = y - C.KITE_TAIL - 30;
+    if (!this.roomFor(x, (top + y) / 2, amp + 30, (y - top) / 2 + 10)) return null;
+    const dir = x < C.W / 2 ? 1 : -1;
+    this.addThing({ kind: 'kite', x, y, amp, dir, speed: TAU / r.range(...C.KITE_FLY), phase: r.range(0, TAU) }, top - 20, y + 30);
+    this.addZone('element', x - amp - 40, top - 30, x + amp + 40, y + 30);
+    const peak = flightPeak(x, y, ...kiteShot(dir));
+    this.addZone('clear', Math.min(x, peak.x) - 60, peak.y, Math.max(x, peak.x) + 60, y);
+    return peak;
+  }
+
+  // Comet: an electric field (x, y is its middle). It traps you there, then the comet hits you
+  // off at COMET_ANGLE toward the middle of the screen.
+  tryComet(x, y) {
+    const R = C.FIELD_R + 10;
+    if (x - R < C.WALL || x + R > C.W - C.WALL) return null;
+    if (!this.roomFor(x, y, R, R)) return null;
+    const dir = x < C.W / 2 ? 1 : -1;
+    this.addThing({ kind: 'comet', x, y, dir }, y - R - 20, y + R + 400);
+    this.addZone('element', x - R - 20, y - R - 20, x + R + 20, y + R + 20);
+    const peak = flightPeak(x, y, ...cometShot(dir));
+    this.addZone('clear', Math.min(x, peak.x) - 60, peak.y, Math.max(x, peak.x) + 60, y);
+    return peak;
+  }
+
+  // Wind gust: an updraft column between `from` and `to`, beside the route or across it.
+  addWind(from, to) {
+    const r = this.rng;
+    if (!this.unlockedAt(to.y)('wind') || this.atStart(from.y - 200) || -to.y / C.PX_PER_M >= C.END_HEIGHT || !r.chance(C.WIND_CHANCE)) return;
+    const w = r.range(...C.WIND_W);
+    const h = r.range(...C.WIND_H);
+    const x = r.range(C.WALL + w / 2 + 10, C.W - C.WALL - w / 2 - 10);
+    const y1 = lerp(from.y, to.y, r.range(0.1, 0.4));
+    const y0 = y1 - h;
+    if (this.doorNear((y0 + y1) / 2, h / 2 + 40) !== null || this.inZone(x, (y0 + y1) / 2, Math.max(w, h) / 2, 'element')) return;
+    this.addThing({ kind: 'wind', x, y: (y0 + y1) / 2, w, y0, y1, phase: r.range(0, TAU) }, y0 - 10, y1 + 10);
+  }
+
   // A star at the top of each launch: shows where you'll be, and pays for riding it out.
   addPeakStar(peak) {
     const st = { x: clamp(peak.x, C.WALL + 30, C.W - C.WALL - 30), y: peak.y };
@@ -489,10 +731,27 @@ export class Tower {
 
   // ---------------------------------------------------------------- spikes
 
-  // One pattern per gap from the spike bag, plus a loose extra spike now and then.
+  // One pattern per gap from the spike bag, plus a loose extra spike now and then. Higher up it
+  // gets harder: breathers fill in, some gaps get a second pattern, extras get likelier.
   placeSpikes(from, to) {
     const r = this.rng;
-    switch (this.spikeBag.next()) {
+    const d = this.spikeLevel(to.y);
+    const at = (range) => lerp(range[0], range[1], d);
+    let pattern = this.spikeBag.next();
+    if (pattern === 'none' && r.chance(at(C.SPIKE_FILL))) pattern = this.spikeBag.next((p) => p !== 'none');
+    this.placePattern(from, to, pattern);
+    if (r.chance(at(C.SPIKE_DOUBLE))) this.placePattern(from, to, this.spikeBag.next((p) => p !== 'none'));
+    if (r.chance(at(C.SPIKE_EXTRA))) this.addSpike(from, to, { rad: [14, 24] });
+  }
+
+  // 0 at the ground to 1 at END_HEIGHT: how hard the spikes are here.
+  spikeLevel(y) {
+    return clamp(-y / C.PX_PER_M / C.END_HEIGHT, 0, 1);
+  }
+
+  placePattern(from, to, pattern) {
+    const r = this.rng;
+    switch (pattern) {
       case 'spike':
         this.addSpike(from, to, { rad: [14, 22] });
         break;
@@ -531,7 +790,6 @@ export class Tower {
         break;
       // 'none': a breather
     }
-    if (r.chance(C.SPIKE_EXTRA)) this.addSpike(from, to, { rad: [14, 24] });
   }
 
   // x of the route line from `from` to `to` at height y.
@@ -561,7 +819,7 @@ export class Tower {
       if (this.platformNear(x, y, rad + ax + 30, rad + ay + 60)) continue;
       if (this.doorNear(y, rad + ay + 70) !== null) continue;
       if (this.inZone(x, y, rad + Math.max(ax, ay) + 20, 'any') || this.portalNear(x, y, rad + Math.max(ax, ay) + 70)) continue;
-      const hz = { kind: amp ? 'saw' : 'spike', x, y, r: rad, amp, axis, speed: TAU / r.range(2, 3.5), phase: r.range(0, TAU) };
+      const hz = { kind: amp ? 'saw' : 'spike', x, y, r: rad, amp, axis, speed: (TAU / r.range(2, 3.5)) * lerp(C.SAW_SPEED[0], C.SAW_SPEED[1], this.spikeLevel(y)), phase: r.range(0, TAU) };
       this.addHazard(hz);
       return hz;
     }
@@ -595,7 +853,8 @@ export class Tower {
   // Doors are added as generation passes them, so their platform ids stay deterministic.
   addDoorsUpTo(y) {
     let next = this.doors.length || 1;
-    while (-doorHeight(next) * C.PX_PER_M >= y) {
+    // The last door is the end; space has none.
+    while (-doorHeight(next) * C.PX_PER_M >= y && doorHeight(next) <= C.END_HEIGHT) {
       this.doors[next] = this.addPlatform({ x: C.W / 2, y: -doorHeight(next) * C.PX_PER_M, w: C.W - 2 * C.WALL, type: 'door', n: next });
       next++;
     }

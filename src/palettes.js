@@ -175,6 +175,14 @@ export function expand(p) {
     elevator: el(1),
     portalBlue: el(2), // the entry
     portalYellow: exit,
+    balloon: el(3),
+    // The bubble is mostly see-through, so it gets the accent that stands out most from the background.
+    bubble: [...pool].sort((a, b) => rgbDist(b, bg) - rgbDist(a, bg))[0],
+    planet: el(5),
+    rail: el(6),
+    kite: el(7),
+    comet: star, // a bright streak, like a shooting star
+    wind: mixColor(fg, bg, 0.25), // wind lines in a soft version of the contrast tone
     bg,
     door: bg,
     ink: fg,
@@ -190,6 +198,9 @@ export const EXPANDED = PALETTES.map(expand);
 
 // Index of the first palette of the last act (space), which repeats once the journey runs out.
 export const LOOP_FROM = PALETTES.findIndex((p) => p.name === 'Plum Jam');
+
+// Space, past the last door: total black with white starlight.
+export const SPACE = expand({ name: 'Space', mood: 'space', bg: '#000000', fg: '#eef1ff', accents: ['#8fb8ff', '#ff6b8b', '#c79bff', '#ffe27a', '#7ff0d4'] });
 
 // The palette for section n (above door n).
 export function sectionPalette(n) {

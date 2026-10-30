@@ -121,6 +121,7 @@ for (const day of days) {
   types.hearts = tower.hearts.length;
   types.funnels = tower.funnels.length;
   types.elevators = tower.elevators.length;
+  for (const t of tower.things) types[`${t.kind}s`] = (types[`${t.kind}s`] || 0) + 1;
   types.stars = tower.stars.length;
   types.portals = tower.portals.length;
   const hz = {};

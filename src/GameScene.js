@@ -1,14 +1,16 @@
 import Phaser from 'phaser';
 import * as C from './config.js';
-import { Tower, platformX, hazardPos, heartPos, doorHeight, nextDoorIndex, elevatorOffset, elevatorIdle } from './tower.js';
+import { Tower, platformX, hazardPos, heartPos, doorHeight, nextDoorIndex, elevatorOffset, elevatorIdle, railAt, bubblePos, kitePos, kiteTow, windGust, kiteShot, cometShot } from './tower.js';
 import { integrate, substeps, launchSpeed, previewPath, MIN_X, MAX_X } from './physics.js';
 import { dayKey } from './rng.js';
 import * as Save from './save.js';
 import { sfx, unlockAudio, setMuted, buzz } from './audio.js';
 import { drawWorld, palette, portalColor, hex, tint, textColors, wordColor } from './draw.js';
-import { Hud, Menu, label } from './ui.js';
+import { Hud, Menu, label, PillButton } from './ui.js';
+import { SPACE } from './palettes.js';
 
 const STEP = 1 / 120;
+const CAM_EASE = 5; // per second: how fast the camera catches up with its target
 const clamp = Phaser.Math.Clamp;
 
 export class GameScene extends Phaser.Scene {
@@ -20,13 +22,17 @@ export class GameScene extends Phaser.Scene {
     this.day = dayKey();
     this.save = Save.load(this.day);
     setMuted(this.save.muted);
-    this.tower = new Tower(this.day);
+    // Dev only: ?force=kite makes every chain element a kite (any element type works).
+    const force = import.meta.env?.DEV ? new URLSearchParams(location.search).get('force') : null;
+    this.tower = new Tower(this.day, { force });
 
     this.simT = 0;
     this.runT = 0; // seconds of real time in this run, reset by a death
     this.acc = 0;
     this.timeScale = 1;
     this.paused = false;
+    this.ending = null; // the ending sequence, once END_HEIGHT is reached
+    this.heartsFlying = 0; // hearts from doors on their way up to the bar
     this.drag = null;
     this.dirty = false;
     this.lastSave = 0;
@@ -42,6 +48,7 @@ export class GameScene extends Phaser.Scene {
     this.drawPortals = [];
     this.drawStars = [];
     this.drawElevs = [];
+    this.drawThings = [];
     this.nearItems = [];
     this.nearHearts = [];
 
@@ -60,6 +67,7 @@ export class GameScene extends Phaser.Scene {
       portalT: 0, // portal cooldown
       warp: null, // { to, x0, y0, x1, y1, t, ang } while flying between portals
       elevator: null, // the elevator carrying you
+      carry: null, // { kind, t, ... } while a balloon, bubble, planet or rail has you
       launched: false, // rising from an element's launch: invincible, platforms one-way
       hitT: 0,
       squash: 0,
@@ -88,6 +96,72 @@ export class GameScene extends Phaser.Scene {
     this.setupInput();
     this.setupLifecycle();
     this.setupMap();
+  }
+
+  // ---------------------------------------------------------------- ending
+
+  // Reaching END_HEIGHT: the last level is space, total black with stars. Control stops, gravity
+  // turns off and the ball's speed eases to straight up: it rises and rises on its own, the world
+  // scrolling past. END_TITLE seconds in, the title drops in, then the score and a restart button.
+  startEnding() {
+    const pl = this.player;
+    this.ending = { t: 0, titleShown: false };
+    this.drag = null;
+    Object.assign(pl, { carry: null, funnel: null, warp: null, elevator: null, ground: null, launched: true });
+    this.dropKite();
+    // Space: the palette fades to black.
+    this.colFrom = this.col;
+    this.colTo = SPACE;
+    this.colT = this.time.now;
+    this.persist();
+    sfx.best();
+    buzz(60);
+  }
+
+  updateEnding(dt) {
+    const e = this.ending;
+    const pl = this.player;
+    e.t += dt;
+    this.simT += dt;
+    // No gravity, no control: the speed eases to straight up, drifting to the middle of the screen
+    // (the camera holds the ball in the middle vertically, see cameraTarget).
+    const k = 1 - Math.exp(-C.END_EASE * dt);
+    pl.vx += ((C.W / 2 - pl.x) * 3 - pl.vx) * k;
+    pl.vy += (-C.END_SPEED - pl.vy) * k;
+    pl.x += pl.vx * dt;
+    pl.y += pl.vy * dt;
+    this.height = this.heightOf(pl.y);
+    this.updateEffects(dt);
+    this.updateCamera(dt);
+    this.tower.ensureUpTo(this.cameras.main.scrollY);
+    drawWorld(this, null);
+    this.hud.update(dt);
+    if (e.t >= C.END_TITLE && !e.titleShown) {
+      e.titleShown = true;
+      this.showEndTitle();
+    }
+  }
+
+  // The title fades in in place (as the top bar fades out); the score fades in under it, then a
+  // PLAY AGAIN button.
+  // Laid out around the ball, which sits in the middle: title and score above, button below.
+  showEndTitle() {
+    this.hud.hide();
+    const y = C.H * 0.2;
+    const title = label(this, C.W / 2, y, 'UP UP AND AWAY', 46, 0).setDepth(90).setColor('#ffffff').setShadow(0, 4, 'rgba(0,0,0,0.6)', 12);
+    this.tweens.add({ targets: title, alpha: 1, duration: 900, ease: 'Sine.Out' });
+    const score = label(this, C.W / 2, y + 58, `score ${this.score}   ·   best today ${this.save.score}`, 18, 0).setDepth(90).setColor('#ffffff');
+    this.tweens.add({ targets: score, alpha: 0.8, delay: 900, duration: 700 });
+    const btn = new PillButton(this, C.W / 2, C.H * 0.8, 240, 58, 'PLAY AGAIN', () => this.scene.restart(), 90).style(0x000000, 0xffffff, true);
+    btn.text.setFontSize(22);
+    btn.setAlpha(0).zone.disableInteractive();
+    this.tweens.add({
+      targets: [btn.g, btn.text],
+      alpha: 1,
+      delay: C.END_BUTTON * 1000,
+      duration: 500,
+      onComplete: () => btn.zone.setInteractive({ useHandCursor: true }),
+    });
   }
 
   // ---------------------------------------------------------------- debug map
@@ -141,7 +215,7 @@ export class GameScene extends Phaser.Scene {
   teleport() {
     const pl = this.player;
     const y = this.map.y + C.H / 2;
-    Object.assign(pl, { x: C.W / 2, y, vx: 0, vy: 0, ground: null, launched: false, funnel: null, warp: null, elevator: null, jumpCd: 0, fromY: y });
+    Object.assign(pl, { x: C.W / 2, y, vx: 0, vy: 0, ground: null, launched: false, funnel: null, warp: null, elevator: null, carry: null, kite: null, jumpCd: 0, fromY: y });
     this.height = this.heightOf(y);
     this.runDoor = nextDoorIndex(this.height);
     this.doorT = this.runT;
@@ -180,7 +254,7 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (pointer, over) => {
       unlockAudio();
-      if (this.paused || over.length) return;
+      if (this.paused || this.ending || over.length) return;
       const { x, y } = toLogical(pointer);
       if (this.map) {
         this.map.grab = { y, scroll: this.map.y }; // the map scrolls by dragging
@@ -197,6 +271,12 @@ export class GameScene extends Phaser.Scene {
     });
     const release = (pointer) => {
       if (this.map) this.map.grab = null;
+      // In a bubble or orbiting a planet, a tap (or any release) lets go.
+      if (this.drag && !this.paused && ['bubble', 'planet'].includes(this.player.carry?.kind)) {
+        this.drag = null;
+        this.letGo();
+        return;
+      }
       if (!this.drag) return;
       const { x, y } = toLogical(pointer);
       this.drag.x = x;
@@ -207,7 +287,7 @@ export class GameScene extends Phaser.Scene {
     };
     this.input.on('pointerup', release);
     this.input.on('pointerupoutside', release);
-    this.input.keyboard?.on('keydown-ESC', () => (this.map ? this.closeMap() : this.paused ? this.menu.close() : this.menu.open()));
+    this.input.keyboard?.on('keydown-ESC', () => (this.ending ? null : this.map ? this.closeMap() : this.paused ? this.menu.close() : this.menu.open()));
   }
 
   setupLifecycle() {
@@ -299,7 +379,7 @@ export class GameScene extends Phaser.Scene {
 
   tryLaunch(aim) {
     const pl = this.player;
-    if (pl.dead || pl.funnel || pl.warp || pl.elevator) return;
+    if (pl.dead || this.carried()) return;
     if (this.jumpsLeft() <= 0) {
       sfx.empty();
       return;
@@ -322,7 +402,11 @@ export class GameScene extends Phaser.Scene {
   update(time, delta) {
     const dt = Math.min(delta / 1000, 0.05);
     const pl = this.player;
-    const aim = this.paused || this.map || pl.dead || pl.funnel || pl.warp || pl.elevator ? null : this.aim();
+    if (this.ending) {
+      this.updateEnding(dt);
+      return;
+    }
+    const aim = this.paused || this.map || pl.dead || this.carried() ? null : this.aim();
 
     if (this.map) this.updateMap(dt);
     else if (!this.paused) {
@@ -366,10 +450,11 @@ export class GameScene extends Phaser.Scene {
     if (pl.hitT > 0) pl.hitT -= dt;
     if (pl.portalT > 0) pl.portalT -= dt;
     if (pl.jumpCd > 0) pl.jumpCd -= dt;
-    if (pl.funnel || pl.warp || pl.elevator) {
+    if (this.carried()) {
       if (pl.funnel) this.slideFunnel(dt);
       else if (pl.warp) this.slideWarp(dt);
-      else this.rideElevator();
+      else if (pl.elevator) this.rideElevator();
+      else this.rideCarry(dt);
       this.updateStars();
       this.updateHeight();
       return;
@@ -391,8 +476,10 @@ export class GameScene extends Phaser.Scene {
       // Substeps keep fast bounces from skipping through platforms.
       const n = substeps(pl, dt);
       const h = dt / n;
-      for (let i = 0; i < n && !pl.ground && !pl.elevator; i++) {
+      const winds = this.windsAt(pl.x, pl.y);
+      for (let i = 0; i < n && !pl.ground && !this.carried(); i++) {
         const prevY = pl.y;
+        for (const w of winds) this.blow(w, h);
         const wall = integrate(pl, h, pl.launched ? C.GRAVITY * C.LAUNCH_GRAVITY : C.GRAVITY);
         if (wall) this.onWall(wall);
         if (pl.vy < 0) this.save.climbed += (-pl.vy * h) / C.PX_PER_M;
@@ -400,10 +487,13 @@ export class GameScene extends Phaser.Scene {
         if (pl.launched && pl.vy >= 0) pl.launched = false;
         this.collide(prevY);
       }
-      if (!pl.elevator) this.checkFunnels();
-      if (!pl.funnel && !pl.elevator) this.checkPortals();
+      if (!this.carried()) this.checkFunnels();
+      if (!this.carried()) this.checkPortals();
+      if (!this.carried()) this.checkThings();
     }
-    if (pl.hitT <= 0 && !pl.funnel && !pl.elevator && !pl.launched) this.checkHazards();
+    // A kite carries you only while its launch lasts.
+    if (pl.kite && !pl.launched) this.dropKite();
+    if (pl.hitT <= 0 && !this.carried() && !pl.launched) this.checkHazards();
     if (!pl.dead) {
       this.updateHearts();
       this.updateStars();
@@ -442,6 +532,197 @@ export class GameScene extends Phaser.Scene {
     this.burst(pl.x, pl.y + 20, this.col.spark, 12, 300, 0, 1);
   }
 
+  // Is something moving the player for it (funnel, portal, elevator, balloon, bubble, planet, rail)?
+  // While carried you can't jump or be hurt.
+  carried() {
+    const pl = this.player;
+    return !!(pl.funnel || pl.warp || pl.elevator || pl.carry);
+  }
+
+  // Catches the player with a nearby balloon, bubble, planet or rail.
+  checkThings() {
+    const pl = this.player;
+    const R = C.PLAYER_R;
+    for (const t of this.tower.thingsIn(pl.y - 160, pl.y + 160, this.nearItems)) {
+      if (this.simT < t.readyT) continue;
+      let carry = null;
+      if (t.kind === 'balloon') {
+        // The balloon itself, or anywhere along its string.
+        const by = t.y - C.BALLOON_STRING - C.BALLOON_R;
+        const onString = Math.abs(pl.x - t.x) < R + 6 && pl.y > by && pl.y < t.y + R;
+        if (onString || Math.hypot(pl.x - t.x, pl.y - by) < C.BALLOON_R + R) carry = { x0: t.x, y0: t.y };
+      } else if (t.kind === 'bubble') {
+        const [bx, by] = bubblePos(t, this.simT);
+        if (Math.hypot(pl.x - bx, pl.y - by) < C.BUBBLE_R + R * 0.5) carry = { x0: bx, y0: by };
+      } else if (t.kind === 'planet') {
+        if (Math.hypot(pl.x - t.x, pl.y - t.y) < C.ORBIT_R + R * 0.6) carry = { ang: Math.atan2(pl.y - t.y, pl.x - t.x), turned: 0 };
+      } else if (t.kind === 'kite') {
+        const [kx, ky, tx, ty] = kitePos(t, this.simT);
+        if (Math.hypot(pl.x - tx, pl.y - ty) < R + 14 || Math.hypot(pl.x - kx, pl.y - ky) < R + 22) carry = { x0: pl.x, y0: pl.y };
+      } else if (t.kind === 'comet') {
+        // The electric field traps you; the comet comes for you.
+        if (Math.hypot(pl.x - t.x, pl.y - t.y) < C.FIELD_R + R * 0.3) carry = { x0: pl.x, y0: pl.y };
+      } else if (t.kind === 'rail') {
+        // Nearest point of the track; you join it there.
+        let best = Infinity;
+        let s = 0;
+        for (let i = 0; i < t.pts.length; i++) {
+          const d = Math.hypot(pl.x - t.pts[i].x, pl.y - t.pts[i].y);
+          if (d < best) {
+            best = d;
+            s = t.cum[i];
+          }
+        }
+        if (best < C.RAIL_GRAB + R * 0.5) carry = { s };
+      }
+      if (!carry) continue;
+      pl.carry = { kind: t.kind, thing: t, t: 0, ...carry };
+      Object.assign(pl, { vx: 0, vy: 0, ground: null, launched: false });
+      this.trail.length = 0;
+      this.elementScore(pl.x, pl.y, t);
+      t.kind === 'rail' ? sfx.funnel() : sfx.portal();
+      buzz(15);
+      this.burst(pl.x, pl.y, this.col[t.kind], 10, 200);
+      return;
+    }
+  }
+
+  // The kite that was carrying you lets go (at the top of the flight, or when anything else ends
+  // the launch) and drifts off on its own, up and away, fading.
+  dropKite() {
+    const pl = this.player;
+    const t = pl.kite;
+    if (!t) return;
+    const [kx, ky] = kiteTow(pl);
+    t.leave = { x: kx, y: ky, vx: pl.vx * 0.6, vy: Math.min(pl.vy, 0) - 260, t0: this.simT };
+    pl.kite = null;
+  }
+
+  // Updraft columns you're in.
+  windsAt(x, y) {
+    const out = [];
+    for (const t of this.tower.thingsIn(y - 10, y + 10, this.nearItems)) if (t.kind === 'wind' && y > t.y0 && y < t.y1 && Math.abs(x - t.x) < t.w / 2) out.push(t);
+    return out;
+  }
+
+  // An updraft takes you over, however you came in: sideways motion dies, you're drawn to its
+  // middle, and your speed is steered to straight up at WIND_MAX (by how hard it's gusting). You
+  // count as launched: invincible, platforms one-way, and the lighter launch gravity carries you
+  // on past its top. The first time you enter one in a run it scores like an element.
+  blow(w, dt) {
+    const pl = this.player;
+    if (pl.y <= w.y0 || pl.y >= w.y1 || Math.abs(pl.x - w.x) >= w.w / 2) return;
+    if (!this.scored.has(w)) {
+      this.elementScore(pl.x, pl.y, w);
+      sfx.launch(0.6);
+    }
+    const k = 1 - Math.exp(-C.WIND_GRIP * dt);
+    const toMiddle = (w.x - pl.x) * 6; // px/s toward the middle of the column
+    pl.vx += (toMiddle - pl.vx) * k;
+    pl.vy += (-C.WIND_MAX * windGust(w, this.simT) - pl.vy) * k;
+    pl.launched = true;
+  }
+
+  // Moves the player along with whatever has it.
+  rideCarry(dt) {
+    const pl = this.player;
+    const c = pl.carry;
+    const t = c.thing;
+    c.t += dt;
+    if (c.kind === 'balloon') {
+      // Floats up, easing in and out, swaying side to side, then lets go at the top.
+      const k = Math.min(1, c.t / C.BALLOON_TIME);
+      const e = k * k * (3 - 2 * k);
+      pl.x = c.x0 + 18 * Math.sin(k * Math.PI * 4);
+      pl.y = c.y0 - t.rise * e;
+      if (k >= 1) this.letGo();
+    } else if (c.kind === 'bubble') {
+      // Rises steadily with a little wobble; pops by itself at the top of its rise.
+      pl.y -= C.BUBBLE_SPEED * dt;
+      pl.x = c.x0 + 8 * Math.sin(c.t * 3.5);
+      if (c.y0 - pl.y >= t.rise) this.letGo();
+    } else if (c.kind === 'planet') {
+      // Circles the planet. After ORBIT_MIN_TURN it lets go by itself where the circling heads
+      // straight up (the left side spinning clockwise, the right side counterclockwise).
+      const step = C.ORBIT_SPIN * dt;
+      c.ang += t.spin * step;
+      c.turned += step;
+      pl.x = t.x + Math.cos(c.ang) * C.ORBIT_R;
+      pl.y = t.y + Math.sin(c.ang) * C.ORBIT_R;
+      const rel = t.spin > 0 ? Math.PI : 0;
+      const d = (((t.spin * (c.ang - rel)) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      if (c.turned >= C.ORBIT_MIN_TURN * 2 * Math.PI && c.prevD != null && d < c.prevD) {
+        c.ang = rel; // exactly at the straight-up point
+        pl.x = t.x + Math.cos(rel) * C.ORBIT_R;
+        pl.y = t.y;
+        this.letGo();
+        return;
+      }
+      c.prevD = d;
+    } else if (c.kind === 'kite') {
+      // No pull anywhere: it takes off right away, from where you touched it.
+      this.letGo();
+    } else if (c.kind === 'comet') {
+      // Trapped: pulled into the middle of the field, crackling, until the comet arrives.
+      const k = Math.min(1, c.t / C.COMET_TRAP);
+      const pull = Math.min(1, k * 3);
+      pl.x = c.x0 + (t.x - c.x0) * pull + (Math.random() - 0.5) * 5;
+      pl.y = c.y0 + (t.y - c.y0) * pull + (Math.random() - 0.5) * 5;
+      if (k >= 1) {
+        pl.x = t.x;
+        pl.y = t.y;
+        this.letGo();
+      }
+    } else if (c.kind === 'rail') {
+      // Slides along the track; off the end it flings you.
+      c.s += C.RAIL_SPEED * dt;
+      const p = railAt(t, c.s);
+      pl.x = p.x;
+      pl.y = p.y - C.PLAYER_R;
+      if (c.s >= t.len) this.letGo();
+    }
+  }
+
+  // Ends a balloon, bubble, planet or rail ride with its launch.
+  letGo() {
+    const pl = this.player;
+    const c = pl.carry;
+    if (!c) return;
+    const t = c.thing;
+    pl.carry = null;
+    if (c.kind === 'balloon') {
+      t.readyT = this.simT + C.BALLOON_RETURN;
+      this.launch(0, -C.BALLOON_EXIT);
+    } else if (c.kind === 'bubble') {
+      t.readyT = this.simT + C.BUBBLE_RETURN;
+      this.launch(0, -C.BUBBLE_EXIT);
+      sfx.bounce();
+      this.burst(pl.x, pl.y, this.col.bubble, 16, 260);
+    } else if (c.kind === 'planet') {
+      // Along the circle, the way you were going.
+      t.readyT = this.simT + C.ORBIT_COOLDOWN;
+      this.launch(-Math.sin(c.ang) * t.spin * C.ORBIT_EXIT, Math.cos(c.ang) * t.spin * C.ORBIT_EXIT);
+    } else if (c.kind === 'kite') {
+      // The kite takes off as if shot, and carries you under it to the top of the flight.
+      t.readyT = this.simT + C.KITE_RETURN;
+      t.leave = null;
+      this.launch(...kiteShot(t.dir));
+      pl.kite = t;
+    } else if (c.kind === 'comet') {
+      // The hit.
+      t.readyT = this.simT + C.COMET_COOLDOWN;
+      this.launch(...cometShot(t.dir));
+      this.cameras.main.shake(200, 0.011);
+      buzz(40);
+      this.burst(pl.x, pl.y, this.col.comet, 24, 420, t.dir * 0.4, -1);
+      this.burst(pl.x, pl.y, this.col.spark, 12, 300);
+    } else if (c.kind === 'rail') {
+      t.readyT = this.simT + C.RAIL_COOLDOWN;
+      this.launch(t.exit.x * C.RAIL_EXIT, t.exit.y * C.RAIL_EXIT);
+    }
+    this.burst(pl.x, pl.y, this.col[c.kind], 10, 240, 0, -1);
+  }
+
   // Any element's launch: you rise purple and invincible, and platforms turn one-way.
   // The rise runs on lighter gravity (LAUNCH_GRAVITY); scaling the speed by its square root
   // keeps the peak, height and sideways, exactly where full speed would put it.
@@ -455,8 +736,8 @@ export class GameScene extends Phaser.Scene {
 
   // Solid platforms: every side blocks. Doors and crumbling platforms (and every platform while
   // launched) are one-way: you pass up through them and land on top.
-  // Elevators: only the floor inside the U counts, as a platform you land on from above. Resting
-  // there for ELEV_WAIT starts the ride (see stepSim). The walls don't block.
+  // Elevators are solid U boxes (walls and floor block from every side, whatever SOLID_PLATFORMS
+  // says). Landing on the floor inside and resting there for ELEV_WAIT starts the ride (see stepSim).
   collide(prevY) {
     const pl = this.player;
     const R = C.PLAYER_R;
@@ -474,10 +755,21 @@ export class GameScene extends Phaser.Scene {
     }
     if (pl.launched || pl.ground) return;
     for (const e of this.tower.elevatorsIn(pl.y - 120, pl.y + 120, this.nearItems)) {
-      if (!elevatorIdle(e, this.simT) || pl.vy <= 0) continue;
+      if (!elevatorIdle(e, this.simT)) continue;
       const floor = e.floor;
-      if (prevY + R <= floor.y + 0.01 && pl.y + R >= floor.y && Math.abs(pl.x - e.x) <= C.ELEV_INNER / 2 - R * 0.6) {
+      const half = C.ELEV_INNER / 2;
+      const Wl = C.ELEV_WALL;
+      // Dropping in onto the floor rides it.
+      if (pl.vy > 0 && prevY + R <= floor.y + 0.01 && pl.y + R >= floor.y && Math.abs(pl.x - e.x) <= half - R * 0.6) {
         this.land(floor, e.x);
+        return;
+      }
+      // Otherwise the U is solid: both walls and the floor block from every side.
+      this.pushOut(e.x - half - Wl, e.y - C.ELEV_DEPTH, e.x - half, e.y);
+      this.pushOut(e.x + half, e.y - C.ELEV_DEPTH, e.x + half + Wl, e.y);
+      const vy = pl.vy; // pushOut zeroes it
+      if (this.pushOut(e.x - half - Wl, e.y - Wl, e.x + half + Wl, e.y) === 'top' && vy >= 0 && Math.abs(pl.x - e.x) <= half) {
+        this.land(floor, e.x, vy);
         return;
       }
     }
@@ -779,7 +1071,7 @@ export class GameScene extends Phaser.Scene {
   respawn() {
     const pl = this.player;
     const p = this.tower.platforms[0];
-    Object.assign(pl, { dead: 0, hp: C.MAX_HP, ground: p, offset: 0, vx: 0, vy: 0, jumpCd: 0, hitT: C.HIT_COOLDOWN, launched: false, elevator: null });
+    Object.assign(pl, { dead: 0, hp: C.MAX_HP, ground: p, offset: 0, vx: 0, vy: 0, jumpCd: 0, hitT: C.HIT_COOLDOWN, launched: false, elevator: null, carry: null, kite: null });
     pl.x = C.W / 2;
     pl.y = pl.fromY = p.y - C.PLAYER_R;
     this.runT = 0; // a death starts a new run
@@ -812,16 +1104,22 @@ export class GameScene extends Phaser.Scene {
       this.doorT = this.runT;
       // The tower takes on the palette of the section above the door just reached.
       this.setPalette(this.runDoor - 1);
-      if (pl.hp < C.MAX_HP) {
-        const healed = C.MAX_HP - pl.hp;
-        pl.hp = C.MAX_HP;
-        this.dirty = true;
+      // One heart back: it flies up from the ball into its slot in the bar, and counts on arrival.
+      if (pl.hp + (this.heartsFlying || 0) < C.MAX_HP) {
+        const slot = pl.hp + (this.heartsFlying || 0);
+        this.heartsFlying = (this.heartsFlying || 0) + 1;
         sfx.heart();
-        this.hud.refilled();
-        this.popText(pl.x, pl.y - 70, `HP FULL  +${healed}♥`, 16, this.colTo.heart);
-        this.burst(pl.x, pl.y, this.colTo.heart, 18, 240);
+        this.popText(pl.x, pl.y - 60, '+1♥', 18, this.colTo.heart);
+        this.burst(pl.x, pl.y, this.colTo.heart, 14, 220);
+        this.hud.flyHeart(pl.x, pl.y - this.cameras.main.scrollY, slot, () => {
+          this.heartsFlying--;
+          if (!pl.dead && pl.hp < C.MAX_HP) pl.hp++;
+          this.dirty = true;
+        });
       }
     }
+    // The last door: into space (after it has scored).
+    if (h >= C.END_HEIGHT && !this.ending) this.startEnding();
     // Today's best height only decides which doors are open; it isn't the score.
     const s = this.save;
     if (h > s.best) {
@@ -839,6 +1137,7 @@ export class GameScene extends Phaser.Scene {
 
   // Fades the colors to section n's palette.
   setPalette(n) {
+    if (this.ending) return; // space stays black
     const to = palette(this.tower, n);
     if (to === this.colTo) return;
     this.colFrom = this.col;
@@ -851,7 +1150,12 @@ export class GameScene extends Phaser.Scene {
   // A standing player sits TOP_GAP below the top edge on every screen size, so a full
   // launch always peaks just past the top. Extra screen height shows more below.
   cameraTarget() {
-    return this.player.y - C.TOP_GAP;
+    const pl = this.player;
+    // In the ending the ball sits in the middle of the screen, between the title and the button.
+    // It rises fast, so the camera leads it by its speed; otherwise the easing below would trail
+    // it by speed / CAM_EASE and the ball would ride up into the title.
+    if (this.ending) return pl.y - C.H / 2 + pl.vy / CAM_EASE;
+    return pl.y - C.TOP_GAP;
   }
 
   updateCamera(dt) {
@@ -861,7 +1165,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     const pl = this.player;
-    const s = cam.scrollY + (this.cameraTarget() - cam.scrollY) * (1 - Math.exp(-dt * 5));
+    const s = cam.scrollY + (this.cameraTarget() - cam.scrollY) * (1 - Math.exp(-dt * CAM_EASE));
     cam.scrollY = clamp(s, pl.y - C.H * 0.85, pl.y - 120); // never lose the player off-screen
   }
 

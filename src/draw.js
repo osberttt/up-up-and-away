@@ -1,6 +1,6 @@
 import * as C from './config.js';
 import { hash01 } from './rng.js';
-import { platformX, hazardPos, heartPos, doorHeight, elevatorOffset } from './tower.js';
+import { platformX, hazardPos, heartPos, doorHeight, elevatorOffset, railAt, bubblePos, kitePos, kiteTow, windGust } from './tower.js';
 import { sectionPalette, mixColor } from './palettes.js';
 
 const TAU = Math.PI * 2;
@@ -88,6 +88,7 @@ export function drawWorld(sc, aim) {
   g.fillRect(0, top, C.WALL, bottom - top);
   g.fillRect(C.W - C.WALL, top, C.WALL, bottom - top);
 
+  drawSpace(sc, g, top, bottom);
   drawMarkers(sc, g, col, top, bottom);
   drawBestLine(sc, g, col, top, bottom);
   let doorLabels = 0;
@@ -100,15 +101,40 @@ export function drawWorld(sc, aim) {
   for (const f of sc.tower.funnelsIn(top - 20, bottom + 260, sc.drawFunnels)) drawFunnel(sc, g, f, col);
   for (const pt of sc.tower.portalsIn(top - 40, bottom + 40, sc.drawPortals)) drawPortal(sc, g, pt, col);
   for (const e of sc.tower.elevatorsIn(top - 20, bottom + 20, sc.drawElevs)) drawElevator(sc, g, e, col);
+  for (const t of sc.tower.thingsIn(top - 160, bottom + 160, sc.drawThings)) drawThing(sc, g, t, col);
   drawPortalFx(sc, g);
   for (const st of sc.tower.starsIn(top - 60, bottom + 60, sc.drawStars)) drawStar(sc, g, st, col);
   for (const ht of sc.tower.heartsIn(top - 60, bottom + 60, sc.drawHearts)) drawPickup(sc, g, ht, col);
   drawTrail(sc, g);
   if (aim) drawAim(sc, g, col, aim);
-  if (!sc.player.dead) drawPlayer(sc, g, col, aim);
+  if (!sc.player.dead) {
+    drawPlayer(sc, g, col, aim);
+    drawCarry(sc, g, col);
+  }
   for (const p of sc.particles) {
     g.fillStyle(p.color, Math.min(1, p.life / p.max) * 0.9);
     g.fillCircle(p.x, p.y, p.size * (0.4 + 0.6 * (p.life / p.max)));
+  }
+}
+
+// Space, past END_HEIGHT: stars fixed in the world (so you rise past them), fading in over the
+// first stretch above the last door, twinkling.
+function drawSpace(sc, g, top, bottom) {
+  const endY = -C.END_HEIGHT * C.PX_PER_M;
+  if (top > endY) return;
+  const cell = 70;
+  for (let cy = Math.floor(top / cell); cy <= Math.floor(Math.min(bottom, endY) / cell); cy++) {
+    for (let cx = 0; cx < Math.ceil(C.W / cell); cx++) {
+      const n = cy * 131 + cx * 7;
+      if (hash01(n) > 0.55) continue;
+      const x = cx * cell + hash01(n + 1) * cell;
+      const y = cy * cell + hash01(n + 2) * cell;
+      if (y > endY) continue;
+      const fade = Math.min(1, (endY - y) / 600);
+      const d = 0.3 + 0.7 * hash01(n + 3);
+      const tw = 0.6 + 0.4 * Math.sin(sc.simT * (1.5 + 2 * d) + n);
+      g.fillStyle(0xffffff, fade * tw * (0.3 + 0.7 * d)).fillCircle(x, y, 0.6 + 1.5 * d);
+    }
   }
 }
 
@@ -138,9 +164,9 @@ function drawBackdrop(sc, col) {
 function drawMarkers(sc, g, col, top, bottom) {
   const texts = sc.markerTexts;
   let i = 0;
-  // A mark every 5m, a stronger one every 25m.
+  // A mark every 5m, a stronger one every 25m. None in the ending: just space.
   const first = Math.max(5, Math.ceil(-bottom / C.PX_PER_M / 5) * 5);
-  for (let m = first; m * C.PX_PER_M <= -top; m += 5) {
+  for (let m = first; m * C.PX_PER_M <= -top && !sc.ending; m += 5) {
     const y = -m * C.PX_PER_M;
     const major = m % 25 === 0;
     g.lineStyle(2, col.ink, major ? 0.4 : 0.2);
@@ -155,7 +181,7 @@ function drawMarkers(sc, g, col, top, bottom) {
 function drawBestLine(sc, g, col, top, bottom) {
   const best = sc.save.best;
   const y = -best * C.PX_PER_M;
-  const show = best >= 2 && sc.height < best - 1 && y > top && y < bottom;
+  const show = !sc.ending && best >= 2 && sc.height < best - 1 && y > top && y < bottom;
   sc.bestText.setVisible(show);
   if (!show) return;
   g.lineStyle(2, col.ink, 0.5);
@@ -276,6 +302,238 @@ function drawElevator(sc, g, e, col) {
   if (off === 0) {
     g.fillStyle(col.ink, 0.45).fillTriangle(e.x, top + 12, e.x - 10, top + 28, e.x + 10, top + 28);
   }
+}
+
+// ---------------------------------------------------------------- balloon, bubble, planet, rail
+
+// How visible a thing is: hidden while it's away (in use or coming back), fading in at the end.
+function readyAlpha(sc, t) {
+  return Math.max(0, Math.min(1, 1 - (t.readyT - sc.simT) / 0.6));
+}
+
+function drawThing(sc, g, t, col) {
+  const c = col[t.kind];
+  const pl = sc.player;
+  if (t.kind === 'balloon') {
+    if (pl.carry?.thing === t) return; // drawn with the player
+    const a = readyAlpha(sc, t);
+    if (a > 0) drawBalloon(g, t.x, t.y + Math.sin(sc.simT * 2 + t.x) * 4, c, col.ink, a, sc.simT);
+  } else if (t.kind === 'bubble') {
+    if (pl.carry?.thing === t) return;
+    const a = readyAlpha(sc, t);
+    const [bx, by] = bubblePos(t, sc.simT);
+    if (a > 0) {
+      // Its drift track, faint, so you can read where it goes.
+      g.lineStyle(2, col.ink, 0.12 * a).lineBetween(t.x - t.amp, t.y, t.x + t.amp, t.y);
+      drawBubble(g, bx, by + Math.sin(sc.simT * 1.7 + t.x) * 5, C.BUBBLE_R * (0.6 + 0.4 * a), c, col.ink, a);
+    }
+  } else if (t.kind === 'planet') {
+    drawPlanet(sc, g, t, c, col);
+  } else if (t.kind === 'rail') {
+    drawRail(sc, g, t, c, col);
+  } else if (t.kind === 'kite') {
+    if (pl.carry?.thing === t || pl.kite === t) return; // drawn with the player
+    // Just let go of you: drifting off up and away, fading.
+    const s = t.leave ? sc.simT - t.leave.t0 : Infinity;
+    if (s < 1.6) {
+      const L = t.leave;
+      const lx = L.x + L.vx * s;
+      const ly = L.y + L.vy * s + 120 * s * s;
+      drawKite(g, lx, ly, lx - L.vx * 0.04, ly + C.KITE_TAIL, c, col.ink, 1 - s / 1.6, sc.simT);
+      return;
+    }
+    const a = readyAlpha(sc, t);
+    const [kx, ky, tx, ty] = kitePos(t, sc.simT);
+    if (a > 0) drawKite(g, kx, ky, tx, ty, c, col.ink, a, sc.simT);
+  } else if (t.kind === 'comet') {
+    drawComet(sc, g, t, c, col);
+  } else if (t.kind === 'wind') {
+    drawWind(sc, g, t, c, col);
+  }
+}
+
+// A kite: a diamond with a cross, its tail wiggling down to (tx, ty) with little bows.
+function drawKite(g, kx, ky, tx, ty, c, ink, a, time) {
+  const pts = [];
+  for (let i = 0; i <= 10; i++) {
+    const k = i / 10;
+    pts.push({ x: kx + (tx - kx) * k + Math.sin(k * 7 + time * 6) * 6 * k, y: ky + 26 + (ty - ky - 26) * k });
+  }
+  g.lineStyle(2, ink, 0.8 * a).strokePoints(pts, false);
+  for (const i of [3, 6, 9]) g.fillStyle(c, a).fillTriangle(pts[i].x - 6, pts[i].y - 4, pts[i].x - 6, pts[i].y + 4, pts[i].x, pts[i].y);
+  const d = [
+    { x: kx, y: ky - 28 },
+    { x: kx + 20, y: ky - 4 },
+    { x: kx, y: ky + 26 },
+    { x: kx - 20, y: ky - 4 },
+  ];
+  g.fillStyle(c, a).fillPoints(d, true);
+  g.lineStyle(OUTLINE, ink, a).strokePoints(d, true, true);
+  g.lineStyle(1.5, ink, 0.6 * a).lineBetween(kx, ky - 28, kx, ky + 26);
+  g.lineBetween(kx - 20, ky - 4, kx + 20, ky - 4);
+}
+
+// The electric field: a ring with jagged sparks crackling across it. While it holds you, the
+// comet streaks in from below along the line it will knock you off on.
+function drawComet(sc, g, t, c, col) {
+  const pl = sc.player;
+  const held = pl.carry?.thing === t;
+  const a = held ? 1 : sc.simT < t.readyT ? 0.35 : 1;
+  const R = C.FIELD_R;
+  g.fillStyle(c, 0.12 * a).fillCircle(t.x, t.y, R);
+  g.lineStyle(5, col.ink, 0.7 * a).strokeCircle(t.x, t.y, R);
+  g.lineStyle(2.5, c, a).strokeCircle(t.x, t.y, R);
+  // Crackle: a few zigzag bolts between random points on the ring, redrawn every few frames.
+  const tick = Math.floor(sc.simT * (held ? 30 : 12));
+  for (let b = 0; b < (held ? 5 : 3); b++) {
+    const a0 = hash01(tick * 7 + b) * TAU;
+    const a1 = a0 + Math.PI * (0.6 + hash01(tick * 13 + b) * 0.8);
+    const x0 = t.x + Math.cos(a0) * R;
+    const y0 = t.y + Math.sin(a0) * R;
+    const x1 = t.x + Math.cos(a1) * R;
+    const y1 = t.y + Math.sin(a1) * R;
+    const pts = [{ x: x0, y: y0 }];
+    for (let i = 1; i < 5; i++) {
+      const k = i / 5;
+      pts.push({ x: x0 + (x1 - x0) * k + (hash01(tick * 31 + b * 5 + i) - 0.5) * 22, y: y0 + (y1 - y0) * k + (hash01(tick * 17 + b * 5 + i) - 0.5) * 22 });
+    }
+    pts.push({ x: x1, y: y1 });
+    g.lineStyle(2, c, 0.8 * a).strokePoints(pts, false);
+  }
+  if (!held) return;
+  // The comet, coming up from below toward you along the shot's line.
+  const k = Math.min(1, pl.carry.t / C.COMET_TRAP);
+  const ux = Math.cos(C.COMET_ANGLE) * t.dir;
+  const uy = -Math.sin(C.COMET_ANGLE);
+  const dist = 420 * (1 - k);
+  const hx = t.x - ux * dist;
+  const hy = t.y - uy * dist;
+  for (let i = 8; i >= 1; i--) g.fillStyle(c, 0.5 * (1 - i / 9)).fillCircle(hx - ux * i * 14, hy - uy * i * 14, C.COMET_R * (1 - i / 11));
+  g.fillStyle(col.ink, 1).fillCircle(hx, hy, C.COMET_R + OUTLINE);
+  g.fillStyle(c, 1).fillCircle(hx, hy, C.COMET_R);
+  g.fillStyle(0xffffff, 0.7).fillCircle(hx + ux * 4, hy + uy * 4, C.COMET_R * 0.35);
+}
+
+// An updraft: streaks rising up the column, longer and faster as it gusts, with soft sides.
+function drawWind(sc, g, t, c, col) {
+  const gust = windGust(t, sc.simT);
+  const h = t.y1 - t.y0;
+  const x0 = t.x - t.w / 2;
+  g.fillStyle(c, 0.08 + 0.06 * gust).fillRect(x0, t.y0, t.w, h);
+  for (let i = 0; i < 7; i++) {
+    const lane = x0 + t.w * ((i + 0.5) / 7);
+    const len = 26 + 34 * gust;
+    for (let j = 0; j < 2; j++) {
+      const u = (sc.simT * (0.5 + 0.6 * gust) + hash01(i * 7 + j * 3 + Math.floor(t.y))) % 1;
+      const y = t.y1 - u * h;
+      g.lineStyle(3, c, (0.3 + 0.4 * gust) * Math.min(1, u * 5, (1 - u) * 5)).lineBetween(lane, y, lane, Math.min(t.y1, y + len));
+    }
+  }
+  g.lineStyle(1.5, c, 0.3).lineBetween(x0, t.y0, x0, t.y1);
+  g.lineBetween(x0 + t.w, t.y0, x0 + t.w, t.y1);
+  // Up chevrons at the top.
+  g.lineStyle(2.5, c, 0.6).strokePoints(
+    [
+      { x: t.x - 12, y: t.y0 + 14 },
+      { x: t.x, y: t.y0 + 2 },
+      { x: t.x + 12, y: t.y0 + 14 },
+    ],
+    false,
+  );
+}
+
+// A balloon floating over (x, y), the end of its string, where you hang.
+function drawBalloon(g, x, y, c, ink, a, time) {
+  const R = C.BALLOON_R;
+  const by = y - C.BALLOON_STRING - R;
+  // String: a gentle wave down from the knot.
+  const pts = [];
+  for (let i = 0; i <= 8; i++) {
+    const k = i / 8;
+    pts.push({ x: x + Math.sin(k * 5 + time * 3) * 3 * k, y: by + R + k * C.BALLOON_STRING });
+  }
+  g.lineStyle(2, ink, 0.7 * a).strokePoints(pts, false);
+  // Body: a slightly tall oval with a knot and a shine.
+  g.fillStyle(ink, a).fillEllipse(x, by, (R + OUTLINE) * 2, (R * 1.15 + OUTLINE) * 2);
+  g.fillStyle(c, a).fillEllipse(x, by, R * 2, R * 1.15 * 2);
+  g.fillStyle(ink, a).fillTriangle(x - 5, by + R * 1.15 + 6, x + 5, by + R * 1.15 + 6, x, by + R * 1.15 - 2);
+  g.fillStyle(0xffffff, 0.45 * a).fillEllipse(x - R * 0.35, by - R * 0.4, R * 0.5, R * 0.7);
+}
+
+// A bubble: a tinted inside, a bright rim on a contrast outline (so it reads on any background),
+// and a shine.
+function drawBubble(g, x, y, r, c, ink, a) {
+  g.fillStyle(c, 0.3 * a).fillCircle(x, y, r);
+  g.lineStyle(5.5, ink, 0.85 * a).strokeCircle(x, y, r);
+  g.lineStyle(3, c, a).strokeCircle(x, y, r);
+  g.lineStyle(3, 0xffffff, 0.55 * a).beginPath();
+  g.arc(x, y, r * 0.72, -2.6, -1.7);
+  g.strokePath();
+  g.fillStyle(0xffffff, 0.6 * a).fillCircle(x + r * 0.35, y - r * 0.45, r * 0.09);
+}
+
+// A planet: a body with a band, and its orbit ring with little arrows showing the spin.
+function drawPlanet(sc, g, t, c, col) {
+  const a = sc.simT < t.readyT ? 0.35 : 1; // dimmed while it can't catch you
+  const R = C.ORBIT_R;
+  // Orbit ring, dashed, turning with the spin.
+  const turn = sc.simT * 0.8 * t.spin;
+  for (let i = 0; i < 24; i++) {
+    const a0 = turn + (i / 24) * TAU;
+    g.lineStyle(2.5, c, 0.55 * a).beginPath();
+    g.arc(t.x, t.y, R, a0, a0 + TAU / 48);
+    g.strokePath();
+  }
+  // Spin arrows on the ring.
+  for (let i = 0; i < 3; i++) {
+    const ang = turn * 1.5 + (i * TAU) / 3;
+    const px = t.x + Math.cos(ang) * R;
+    const py = t.y + Math.sin(ang) * R;
+    const tx = -Math.sin(ang) * t.spin;
+    const ty = Math.cos(ang) * t.spin;
+    g.fillStyle(c, 0.9 * a).fillTriangle(px + tx * 8, py + ty * 8, px - tx * 4 - ty * 6, py - ty * 4 + tx * 6, px - tx * 4 + ty * 6, py - ty * 4 - tx * 6);
+  }
+  // Body with a tilted band.
+  const P = C.PLANET_R;
+  g.fillStyle(col.ink, a).fillCircle(t.x, t.y, P + OUTLINE);
+  g.fillStyle(c, a).fillCircle(t.x, t.y, P);
+  g.lineStyle(3, col.ink, 0.5 * a).beginPath();
+  g.arc(t.x, t.y + P * 0.15, P * 0.92, 0.25, Math.PI - 0.25);
+  g.strokePath();
+  g.fillStyle(0xffffff, 0.35 * a).fillCircle(t.x - P * 0.35, t.y - P * 0.35, P * 0.22);
+}
+
+// A rail: a thick track with a knob at the start and an arrow off the end.
+function drawRail(sc, g, t, c, col) {
+  const a = sc.simT < t.readyT ? 0.4 : 1;
+  g.lineStyle(9, col.ink, a).strokePoints(t.pts, false);
+  g.lineStyle(5, c, a).strokePoints(t.pts, false);
+  const s = t.pts[0];
+  g.fillStyle(col.ink, a).fillCircle(s.x, s.y, 7);
+  g.fillStyle(c, a).fillCircle(s.x, s.y, 4.5);
+  const e = t.pts[t.pts.length - 1];
+  const ex = t.exit.x;
+  const ey = t.exit.y;
+  g.fillStyle(col.ink, a).fillTriangle(e.x + ex * 16, e.y + ey * 16, e.x - ey * 9, e.y + ex * 9, e.x + ey * 9, e.y - ex * 9);
+  // A dash running along the track shows which way it goes.
+  const k = (sc.simT * 0.8) % 1;
+  const p = railAt(t, k * t.len);
+  g.fillStyle(0xffffff, 0.7 * a).fillCircle(p.x, p.y, 2.5);
+}
+
+// The balloon or bubble that's carrying the player, drawn with it.
+function drawCarry(sc, g, col) {
+  const pl = sc.player;
+  // A kite carrying you through its flight: ahead of you along it, the tail down to you.
+  if (pl.kite) {
+    const [kx, ky] = kiteTow(pl);
+    drawKite(g, kx, ky, pl.x, pl.y, col.kite, col.ink, 1, sc.simT);
+  }
+  const c = pl.carry;
+  if (!c) return;
+  if (c.kind === 'kite') drawKite(g, pl.x + 10, pl.y - C.KITE_TAIL - 10, pl.x, pl.y, col.kite, col.ink, 1, sc.simT);
+  else if (c.kind === 'balloon') drawBalloon(g, pl.x, pl.y, col.balloon, col.ink, 1, sc.simT);
+  else if (c.kind === 'bubble') drawBubble(g, pl.x, pl.y, C.BUBBLE_R * (1 + 0.05 * Math.sin(c.t * 9)), col.bubble, col.ink, 1);
 }
 
 // A star: points only. The faint ring is the radius it is collected from. Gone once collected this run.
@@ -491,7 +749,7 @@ function drawPickup(sc, g, ht, col) {
 
 // From the palette: the launch color while an element makes you invincible, else a cool color
 // when a jump is ready and a warm one while it cools down.
-const playerColor = (sc) => (sc.player.launched || sc.player.elevator ? sc.col.launched : sc.jumpsLeft() > 0 ? sc.col.canJump : sc.col.cantJump);
+const playerColor = (sc) => (sc.player.launched || sc.player.elevator || sc.player.carry ? sc.col.launched : sc.jumpsLeft() > 0 ? sc.col.canJump : sc.col.cantJump);
 
 function drawTrail(sc, g) {
   const tr = sc.trail;
@@ -586,7 +844,7 @@ function drawPlayer(sc, g, col, aim) {
     y = pl.y;
   }
   const flash = pl.hitT > 0 && Math.floor(pl.hitT * 16) % 2 === 0;
-  const alpha = pl.launched || pl.elevator ? 0.6 : 1; // see-through while invincible
+  const alpha = pl.launched || pl.elevator || pl.carry ? 0.6 : 1; // see-through while invincible
   g.fillStyle(col.ink, alpha);
   ellipse(g, pl.x, y, R * sx + 3, R * sy + 3, ang);
   g.fillStyle(flash ? 0xffffff : playerColor(sc), alpha);
