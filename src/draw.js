@@ -138,10 +138,11 @@ function drawBackdrop(sc, col) {
 function drawMarkers(sc, g, col, top, bottom) {
   const texts = sc.markerTexts;
   let i = 0;
-  const first = Math.max(10, Math.ceil(-bottom / C.PX_PER_M / 10) * 10);
-  for (let m = first; m * C.PX_PER_M <= -top; m += 10) {
+  // A mark every 5m, a stronger one every 25m.
+  const first = Math.max(5, Math.ceil(-bottom / C.PX_PER_M / 5) * 5);
+  for (let m = first; m * C.PX_PER_M <= -top; m += 5) {
     const y = -m * C.PX_PER_M;
-    const major = m % 50 === 0;
+    const major = m % 25 === 0;
     g.lineStyle(2, col.ink, major ? 0.4 : 0.2);
     g.lineBetween(C.WALL, y, C.WALL + (major ? 22 : 12), y);
     const t = texts[i++];
@@ -350,7 +351,9 @@ function drawHazard(sc, g, hz, col) {
   }
   const [x, y] = hazardPos(hz, t);
   if (hz.kind === 'saw') {
-    g.lineStyle(2, col.ink, 0.2).lineBetween(hz.x, hz.y - hz.amp, hz.x, hz.y + hz.amp);
+    // The track it swings along.
+    if (hz.axis === 'x') g.lineStyle(2, col.ink, 0.2).lineBetween(hz.x - hz.amp, hz.y, hz.x + hz.amp, hz.y);
+    else g.lineStyle(2, col.ink, 0.2).lineBetween(hz.x, hz.y - hz.amp, hz.x, hz.y + hz.amp);
     inkStar(g, x, y, hz.r, 10, t * 6, 0.72, col.hazard, col.ink);
   } else {
     inkStar(g, x, y, hz.r, 7, t * 0.6, 0.5, col.hazard, col.ink);

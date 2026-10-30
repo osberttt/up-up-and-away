@@ -87,6 +87,67 @@ export class GameScene extends Phaser.Scene {
 
     this.setupInput();
     this.setupLifecycle();
+    this.setupMap();
+  }
+
+  // ---------------------------------------------------------------- debug map
+
+  // Debug map (in `npm run dev`, or any build with ?debug in the URL): M freezes the game and
+  // frees the camera. Scroll with the wheel, by dragging, or with the arrow / Page keys (Shift
+  // for faster); the tower keeps generating as you go up. T drops the blob in the middle of the
+  // view and resumes; M or Esc resumes where you were.
+  setupMap() {
+    this.map = null; // { y } camera scroll while the map is open
+    const enabled = import.meta.env?.DEV || new URLSearchParams(location.search).has('debug');
+    if (!enabled || !this.input.keyboard) return;
+    this.mapText = label(this, C.W / 2, C.H - 26, '', 14, 0.9).setDepth(70).setVisible(false);
+    const kb = this.input.keyboard;
+    kb.on('keydown-M', () => (this.map ? this.closeMap() : this.openMap()));
+    kb.on('keydown-T', () => this.map && this.teleport());
+    this.mapKeys = kb.addKeys('UP,DOWN,PAGE_UP,PAGE_DOWN,SHIFT');
+    this.input.on('wheel', (pointer, over, dx, dy) => {
+      if (this.map) this.map.y += dy * (this.mapKeys.SHIFT.isDown ? 4 : 1);
+    });
+  }
+
+  openMap() {
+    if (this.paused) return;
+    this.map = { y: this.cameras.main.scrollY };
+    this.drag = null;
+    this.mapText.setVisible(true);
+  }
+
+  closeMap() {
+    this.map = null;
+    this.mapText.setVisible(false);
+  }
+
+  // Scrolling by keys, and the read-out of where the view is.
+  updateMap(dt) {
+    const k = this.mapKeys;
+    const speed = (k.SHIFT.isDown ? 6000 : 1500) * dt;
+    if (k.UP.isDown) this.map.y -= speed;
+    if (k.DOWN.isDown) this.map.y += speed;
+    if (Phaser.Input.Keyboard.JustDown(k.PAGE_UP)) this.map.y -= C.H;
+    if (Phaser.Input.Keyboard.JustDown(k.PAGE_DOWN)) this.map.y += C.H;
+    this.map.y = Math.min(this.map.y, C.PLAYER_R + 100 - C.H); // not below the ground
+    const mid = Math.floor(-(this.map.y + C.H / 2) / C.PX_PER_M);
+    this.mapText.setText(`MAP  ${mid}m   wheel / drag / arrows (Shift fast)   T teleport   M exit`);
+    tint(this.mapText, this.col.ink);
+  }
+
+  // Drops the blob, standing still, in the middle of the view, and resumes. The doors it skipped
+  // don't score or refill hearts; the palette jumps to that section.
+  teleport() {
+    const pl = this.player;
+    const y = this.map.y + C.H / 2;
+    Object.assign(pl, { x: C.W / 2, y, vx: 0, vy: 0, ground: null, launched: false, funnel: null, warp: null, elevator: null, jumpCd: 0, fromY: y });
+    this.height = this.heightOf(y);
+    this.runDoor = nextDoorIndex(this.height);
+    this.doorT = this.runT;
+    this.setPalette(this.runDoor - 1);
+    this.closeMap();
+    this.cameras.main.scrollY = this.cameraTarget();
   }
 
   // ---------------------------------------------------------------- setup
@@ -121,15 +182,21 @@ export class GameScene extends Phaser.Scene {
       unlockAudio();
       if (this.paused || over.length) return;
       const { x, y } = toLogical(pointer);
+      if (this.map) {
+        this.map.grab = { y, scroll: this.map.y }; // the map scrolls by dragging
+        return;
+      }
       this.drag = { sx: x, sy: y, x, y, t: 0 };
     });
     this.input.on('pointermove', (pointer) => {
+      if (this.map?.grab && pointer.isDown) this.map.y = this.map.grab.scroll - (toLogical(pointer).y - this.map.grab.y);
       if (!this.drag) return;
       const { x, y } = toLogical(pointer);
       this.drag.x = x;
       this.drag.y = y;
     });
     const release = (pointer) => {
+      if (this.map) this.map.grab = null;
       if (!this.drag) return;
       const { x, y } = toLogical(pointer);
       this.drag.x = x;
@@ -140,7 +207,7 @@ export class GameScene extends Phaser.Scene {
     };
     this.input.on('pointerup', release);
     this.input.on('pointerupoutside', release);
-    this.input.keyboard?.on('keydown-ESC', () => (this.paused ? this.menu.close() : this.menu.open()));
+    this.input.keyboard?.on('keydown-ESC', () => (this.map ? this.closeMap() : this.paused ? this.menu.close() : this.menu.open()));
   }
 
   setupLifecycle() {
@@ -255,9 +322,10 @@ export class GameScene extends Phaser.Scene {
   update(time, delta) {
     const dt = Math.min(delta / 1000, 0.05);
     const pl = this.player;
-    const aim = this.paused || pl.dead || pl.funnel || pl.warp || pl.elevator ? null : this.aim();
+    const aim = this.paused || this.map || pl.dead || pl.funnel || pl.warp || pl.elevator ? null : this.aim();
 
-    if (!this.paused) {
+    if (this.map) this.updateMap(dt);
+    else if (!this.paused) {
       // The run timer counts real seconds, so slow motion doesn't slow the clock.
       this.runT += dt;
       // Aiming slows time, more the longer the aim is held, so a fling can be lined up on a phone.
@@ -315,6 +383,8 @@ export class GameScene extends Phaser.Scene {
       } else {
         pl.x = clamp(platformX(p, this.simT) + pl.offset, MIN_X, MAX_X);
         pl.y = p.y - C.PLAYER_R;
+        // Resting on an elevator's floor: once the ball has settled, it takes you up.
+        if (p.type === 'elevator' && this.simT - pl.landT >= C.ELEV_WAIT) this.enterElevator(p.elev);
       }
     }
     if (!pl.ground) {
@@ -358,14 +428,18 @@ export class GameScene extends Phaser.Scene {
   rideElevator() {
     const pl = this.player;
     const e = pl.elevator;
-    pl.x = e.x;
+    pl.x = e.x + pl.offset; // where it landed on the floor
     pl.y = e.y - C.ELEV_WALL - C.PLAYER_R + elevatorOffset(e, this.simT);
     if (this.simT < e.rideT + C.ELEV_TIME) return;
     e.rideT = null;
     e.backT = this.simT;
     pl.elevator = null;
     this.launch(0, -C.ELEV_LAUNCH);
-    this.burst(pl.x, pl.y, this.col.deco, 12, 260, 0, -1);
+    // The kick: a hard jolt, a blast of particles out of the box, a strong buzz.
+    this.cameras.main.shake(220, 0.012);
+    buzz(40);
+    this.burst(pl.x, pl.y, this.col.elevator, 22, 420, 0, -1);
+    this.burst(pl.x, pl.y + 20, this.col.spark, 12, 300, 0, 1);
   }
 
   // Any element's launch: you rise purple and invincible, and platforms turn one-way.
@@ -378,7 +452,8 @@ export class GameScene extends Phaser.Scene {
 
   // Solid platforms: every side blocks. Doors and crumbling platforms (and every platform while
   // launched) are one-way: you pass up through them and land on top.
-  // Elevators aren't solid: falling onto one from above (crossing its rim) rides it.
+  // Elevators: only the floor inside the U counts, as a platform you land on from above. Resting
+  // there for ELEV_WAIT starts the ride (see stepSim). The walls don't block.
   collide(prevY) {
     const pl = this.player;
     const R = C.PLAYER_R;
@@ -397,9 +472,9 @@ export class GameScene extends Phaser.Scene {
     if (pl.launched || pl.ground) return;
     for (const e of this.tower.elevatorsIn(pl.y - 120, pl.y + 120, this.nearItems)) {
       if (!elevatorIdle(e, this.simT) || pl.vy <= 0) continue;
-      const rim = e.y - C.ELEV_DEPTH;
-      if (prevY + R <= rim && pl.y + R >= rim && Math.abs(pl.x - e.x) <= C.ELEV_INNER / 2 + C.ELEV_WALL + R * 0.4) {
-        this.enterElevator(e);
+      const floor = e.floor;
+      if (prevY + R <= floor.y + 0.01 && pl.y + R >= floor.y && Math.abs(pl.x - e.x) <= C.ELEV_INNER / 2 - R * 0.6) {
+        this.land(floor, e.x);
         return;
       }
     }
@@ -452,12 +527,13 @@ export class GameScene extends Phaser.Scene {
     e.rideT = this.simT;
     e.backT = null;
     pl.elevator = e;
+    pl.ground = null; // the ride carries you now, keeping your spot on the floor (pl.offset)
     pl.vx = pl.vy = 0;
-    this.recordFall();
     this.trail.length = 0;
     this.elementScore(pl.x, pl.y, e);
     sfx.funnel();
-    buzz(12);
+    buzz(20);
+    this.cameras.main.shake(120, 0.005); // the ride starts with a thump
   }
 
   // Anywhere inside a funnel's cone counts (its mouth faces down): it swallows you and
@@ -518,8 +594,8 @@ export class GameScene extends Phaser.Scene {
   checkPortals() {
     const pl = this.player;
     if (pl.portalT > 0) return;
-    const rr = (C.PORTAL_R * 0.8) ** 2;
-    for (const pt of this.tower.portalsIn(pl.y - 40, pl.y + 40, this.nearItems)) {
+    const rr = C.PORTAL_CATCH ** 2;
+    for (const pt of this.tower.portalsIn(pl.y - C.PORTAL_CATCH, pl.y + C.PORTAL_CATCH, this.nearItems)) {
       if (pt.color !== 'blue' || pt.gone || (pl.x - pt.x) ** 2 + (pl.y - pt.y) ** 2 > rr) continue;
       // The yellow exit may not be generated yet.
       for (let i = 0; i < 80 && !pt.pair && !pt.gone; i++) this.tower.step();
@@ -595,6 +671,7 @@ export class GameScene extends Phaser.Scene {
   // CRUMBLE_TIME after first touch and come back after CRUMBLE_RESPAWN.
   solid(p) {
     if (p.type === 'door') return p.n < this.nextDoor;
+    if (p.type === 'elevator') return elevatorIdle(p.elev, this.simT);
     if (p.crumbleAt == null || this.simT < p.crumbleAt) return true;
     if (this.simT < p.crumbleAt + C.CRUMBLE_RESPAWN) return false;
     p.crumbleAt = null;
@@ -618,6 +695,7 @@ export class GameScene extends Phaser.Scene {
 
     pl.launched = false;
     pl.ground = p;
+    pl.landT = this.simT;
     pl.offset = clamp(pl.x - px, -p.w / 2, p.w / 2);
     pl.vx = 0;
     pl.vy = 0;
@@ -633,11 +711,11 @@ export class GameScene extends Phaser.Scene {
   recordFall() {
     const pl = this.player;
     const drop = (pl.y - pl.fromY) / C.PX_PER_M;
-    if (drop <= 4) return;
+    if (drop <= 2) return;
     const s = this.save;
     s.falls++;
     s.bigFall = Math.max(s.bigFall, drop);
-    if (drop >= 10) this.floatText(pl.x, pl.y - 34, `-${Math.round(drop)}m`);
+    if (drop >= 5) this.floatText(pl.x, pl.y - 34, `-${Math.round(drop)}m`);
   }
 
   onWall(side) {
@@ -775,6 +853,10 @@ export class GameScene extends Phaser.Scene {
 
   updateCamera(dt) {
     const cam = this.cameras.main;
+    if (this.map) {
+      cam.scrollY = this.map.y;
+      return;
+    }
     const pl = this.player;
     const s = cam.scrollY + (this.cameraTarget() - cam.scrollY) * (1 - Math.exp(-dt * 5));
     cam.scrollY = clamp(s, pl.y - C.H * 0.85, pl.y - 120); // never lose the player off-screen

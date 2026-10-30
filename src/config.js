@@ -32,8 +32,8 @@ export const PLAT_THICK = 12; // collision height of a platform below its top
 
 export const DRAG_DEADZONE = 16; // drags shorter than this cancel
 export const MAX_DRAG = 190; // drag length for full power
-export const SLOWMO = 0.15; // time scale reached while aiming
-export const SLOWMO_RAMP = 0.9; // seconds of aiming until time is fully slowed
+export const SLOWMO = 0.75; // time scale reached while aiming
+export const SLOWMO_RAMP = 0.5; // seconds of aiming until time is fully slowed
 
 export const CRUMBLE_TIME = 0.9;
 export const CRUMBLE_RESPAWN = 3.5;
@@ -49,6 +49,9 @@ export const FUNNEL_TUBE = 140; // length of the tube rising from the tip
 export const FUNNEL_NECK = 22; // half-width of the tube
 export const FUNNEL_SPEED = 900; // px/s while sliding through the funnel and its tube
 export const PORTAL_R = 26;
+// Invisible catch radius: the blue portal takes you when the ball's center comes this close to
+// its center, a little beyond the drawn circle, so a near miss still counts.
+export const PORTAL_CATCH = 40;
 export const WARP_SPEED = 1400; // px/s flying from the blue portal to the yellow one, whatever the distance
 export const PORTAL_EXIT = 1700; // upward speed (px/s) you leave the yellow portal with
 export const FUNNEL_RISE = [900, 1300]; // px a funnel fires you above its top
@@ -58,11 +61,33 @@ export const FUNNEL_RISE = [900, 1300]; // px a funnel fires you above its top
 export const ELEV_INNER = 140; // inside width
 export const ELEV_WALL = 16;
 export const ELEV_DEPTH = 96;
-export const ELEV_RISE = [700, 1000];
-export const ELEV_TIME = 1.3;
-export const ELEV_LAUNCH = 2000;
+export const ELEV_RISE = [900, 1300];
+export const ELEV_TIME = 0.8; // moving from the first moment, then surging hard (see elevatorOffset)
+export const ELEV_LAUNCH = 3000; // the kick out of the top (~2100px of rise)
 export const ELEV_RETURN = 3;
-export const ELEVATOR_CHANCE = 0.12;
+export const ELEV_WAIT = 0; // seconds the ball rests on the elevator's floor before it rides (0: at once)
+
+// Elements come in planned chains, not at random. Each element knows where its launch peaks;
+// the next one waits a bit above that peak: you're launched, see it coming into view, then
+// jump up to it and land on it (or into it). A full jump rises PEAK (640px), so it's
+// always reachable. A star marks every peak. Types come from a shuffle bag, so each comes up regularly.
+export const ELEMENT_BAG = ['bouncy', 'bouncy', 'bouncy', 'funnel', 'funnel', 'elevator', 'elevator', 'portal', 'portal'];
+export const CHAIN_LENGTH = [3, 6]; // elements per chain
+export const CHAIN_BREAK = [2, 4]; // path steps between chains
+export const CHAIN_DX = [60, 170]; // px sideways from the peak to the next element
+// px above the peak of the previous launch, to the part of the next element you aim for.
+export const CHAIN_DY = {
+  bouncy: [215, 295], // the pad's top: jump past it and land on it
+  elevator: [185, 265], // the rim: jump past it and drop in
+  funnel: [225, 305], // the mouth: jump up into it
+  portal: [225, 305], // the middle of the blue portal
+};
+// Pads and elevators keep this much clear air above them, so no platform catches you before
+// you drop onto them.
+export const ELEMENT_HEADROOM = 320;
+// Nothing spawns in the first START_CLEAR px above the ground (the tutorial text lives there).
+export const START_CLEAR = 900;
+export const PORTAL_SPAN = [600, 1000]; // px from a blue portal up to its yellow exit
 
 // Stars are only points: fly within STAR_RADIUS of one to collect it (once per run).
 export const STAR_RADIUS = 48;
@@ -75,14 +100,15 @@ export const HEART_CHANCE = 0.3; // chance of a heart per main platform
 export const DOOR_EVERY = 100; // m between doors; passing one refills all hearts
 export const RESPAWN_DELAY = 0.9;
 
-// Everything appears from the start; these are the odds per main platform.
-// Chance of a 1st, 2nd, 3rd... spike or saw beside the path in each gap (each rolled only if the previous one was).
-export const SPIKE_CHANCES = [0.45, 0.2, 0.05];
-export const SAW_CHANCE = 0.4; // share of those that move up and down
+// Spikes: each gap of the route draws one pattern from a shuffle bag, so the mix stays varied
+// and nothing repeats for long. Sizes and spots vary inside each pattern, and SPIKE_EXTRA adds a
+// loose spike now and then on top.
+//   spike: one small ball      big: one large ball     saw: moves up and down
+//   sawX: moves side to side   pair: a gate, one each side of the route
+//   row: three small in a diagonal line                 wall: teeth on a wall    none: a breather
+export const SPIKE_BAG = ['spike', 'spike', 'big', 'saw', 'sawX', 'pair', 'row', 'wall', 'none', 'none', 'none', 'none', 'none'];
+export const SPIKE_EXTRA = 0.15;
 export const SPIKE_CORRIDOR = 80; // px kept clear each side of the route line
-export const WALL_SPIKE_CHANCE = 0.18;
-export const FUNNEL_CHANCE = 0.12;
-export const PORTAL_CHANCE = 0.15;
 
 // Score (per run; a death starts over). Height itself scores nothing.
 // Every element is worth the same: bouncy pad, star, heart, funnel, elevator, portal. Each pad,
@@ -95,13 +121,13 @@ export const CHAIN_WORDS = ['NICE', 'GOOD', 'GREAT', 'AMAZING', 'FANTASTIC'];
 // Reaching a door scores by the seconds since the previous door (or the run's start):
 // the first tier whose limit the time is under.
 export const DOOR_TIERS = [
-  { under: 7, pts: 300, word: 'FANTASTIC' },
-  { under: 10, pts: 250, word: 'AMAZING' },
-  { under: 14, pts: 200, word: 'GREAT' },
-  { under: 19, pts: 150, word: 'GOOD' },
-  { under: 25, pts: 100, word: 'NICE' },
-  { under: 32, pts: 75, word: 'OK' },
-  { under: 40, pts: 50, word: 'SLOW' },
+  { under: 14, pts: 300, word: 'FANTASTIC' },
+  { under: 20, pts: 250, word: 'AMAZING' },
+  { under: 28, pts: 200, word: 'GREAT' },
+  { under: 38, pts: 150, word: 'GOOD' },
+  { under: 50, pts: 100, word: 'NICE' },
+  { under: 64, pts: 75, word: 'OK' },
+  { under: 80, pts: 50, word: 'SLOW' },
   { under: Infinity, pts: 25, word: 'PHEW' },
 ];
 // Pop-up word colors come from the current palette: which palette role each word uses
@@ -117,7 +143,8 @@ export const WORD_ROLES = {
   PHEW: 'cantJump',
 };
 
-export const PX_PER_M = 40;
+// Game meters: 80px each, so a door every 100m is 8000px apart.
+export const PX_PER_M = 80;
 
 export const FONT = '"Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif';
 
