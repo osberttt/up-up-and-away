@@ -39,6 +39,10 @@ export const CRUMBLE_TIME = 0.9;
 export const CRUMBLE_RESPAWN = 3.5;
 // Elements (bouncy pads, funnels, portals, elevators) launch you. While a launch is still
 // rising you are purple and see-through: hazards can't hurt you and platforms are one-way.
+// While a launch rises, gravity is multiplied by LAUNCH_GRAVITY and the launch speed by its
+// square root, so you top out at exactly the same spot, just slower and floatier (0.5: about
+// 30% slower, the rise lasts about 40% longer). 1 = full speed.
+export const LAUNCH_GRAVITY = 0.65;
 export const BOUNCE_MIN = 2400;
 export const BOUNCE_MAX = 3000;
 export const HIT_COOLDOWN = 1;
@@ -72,6 +76,9 @@ export const ELEV_WAIT = 0; // seconds the ball rests on the elevator's floor be
 // jump up to it and land on it (or into it). A full jump rises PEAK (640px), so it's
 // always reachable. A star marks every peak. Types come from a shuffle bag, so each comes up regularly.
 export const ELEMENT_BAG = ['bouncy', 'bouncy', 'bouncy', 'funnel', 'funnel', 'elevator', 'elevator', 'portal', 'portal'];
+// Progression: the height (m) where each element starts appearing. Below the first one there are
+// only stars and spikes (and platforms); no chains start until something is unlocked.
+export const ELEMENT_FROM = { bouncy: 100, funnel: 300, portal: 500, elevator: 700 };
 export const CHAIN_LENGTH = [3, 6]; // elements per chain
 export const CHAIN_BREAK = [2, 4]; // path steps between chains
 export const CHAIN_DX = [60, 170]; // px sideways from the peak to the next element

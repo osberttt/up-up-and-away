@@ -113,14 +113,20 @@ class Bag {
     }
   }
 
-  peek() {
-    if (!this.left.length) this.refill();
-    return this.left[this.left.length - 1];
+  // The next item that passes `ok` (all items by default), or null if none can. Items that
+  // don't pass stay in the bag for later.
+  peek(ok = () => true) {
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = this.left.length - 1; i >= 0; i--) if (ok(this.left[i])) return this.left[i];
+      if (!this.items.some(ok)) return null;
+      this.refill();
+    }
+    return null;
   }
 
-  next() {
-    const item = this.peek();
-    this.left.pop();
+  next(ok = () => true) {
+    const item = this.peek(ok);
+    if (item !== null) this.left.splice(this.left.lastIndexOf(item), 1);
     return item;
   }
 }
@@ -173,6 +179,12 @@ export class Tower {
   // Within the empty start area?
   atStart(y) {
     return y > -C.START_CLEAR;
+  }
+
+  // A test for element types unlocked at height y (px): progression, see ELEMENT_FROM.
+  unlockedAt(y) {
+    const m = -y / C.PX_PER_M;
+    return (type) => m >= C.ELEMENT_FROM[type];
   }
 
   addPlatform(p) {
@@ -312,6 +324,8 @@ export class Tower {
     const r = this.rng;
     if (!this.chain) {
       if (this.atStart(to.y) || --this.chainBreak > 0) return;
+      // Nothing unlocked yet at this height: no chain (progression, see ELEMENT_FROM).
+      if (this.elementBag.peek(this.unlockedAt(to.y)) === null) return;
       const spot = this.clearSpot(from, to, 60);
       if (!spot) return; // try again next step
       this.chain = { target: spot, left: Math.floor(r.range(C.CHAIN_LENGTH[0], C.CHAIN_LENGTH[1] + 1)) };
@@ -320,10 +334,11 @@ export class Tower {
     // The planned spot may be several gaps up; lay it once the route reaches that height.
     while (this.chain && this.chain.target.y >= to.y) {
       const t = this.chain.target;
-      // The bag's pick if it fits; otherwise another type, before the chain gives up.
-      const type = this.elementBag.next();
-      let peak = this.placeElement(type, t);
-      for (const alt of ['funnel', 'portal', 'bouncy', 'elevator']) if (!peak && alt !== type) peak = this.placeElement(alt, t);
+      // The bag's pick if it fits; otherwise another unlocked type, before the chain gives up.
+      const ok = this.unlockedAt(t.y);
+      const type = this.elementBag.next(ok);
+      let peak = type && this.placeElement(type, t);
+      for (const alt of ['funnel', 'portal', 'bouncy', 'elevator']) if (!peak && alt !== type && ok(alt)) peak = this.placeElement(alt, t);
       if (peak) this.chainStats.links++;
       else this.chainStats.failed++;
       if (!peak || --this.chain.left <= 0) {
@@ -333,7 +348,14 @@ export class Tower {
         return;
       }
       this.addPeakStar(peak);
-      const next = this.hopFrom(peak, this.elementBag.peek());
+      // The next element is placed about at the peak's height, so unlock by that.
+      const nextType = this.elementBag.peek(this.unlockedAt(peak.y));
+      if (nextType === null) {
+        this.chain = null;
+        this.chainBreak = Math.floor(r.range(C.CHAIN_BREAK[0], C.CHAIN_BREAK[1] + 1));
+        return;
+      }
+      const next = this.hopFrom(peak, nextType);
       // Keep the hop from the peak to the next element free of spikes and platforms.
       this.addZone('clear', Math.min(peak.x, next.x) - 70, Math.min(peak.y, next.y) - 80, Math.max(peak.x, next.x) + 70, Math.max(peak.y, next.y) + 80);
       this.chain.target = next;

@@ -393,7 +393,7 @@ export class GameScene extends Phaser.Scene {
       const h = dt / n;
       for (let i = 0; i < n && !pl.ground && !pl.elevator; i++) {
         const prevY = pl.y;
-        const wall = integrate(pl, h);
+        const wall = integrate(pl, h, pl.launched ? C.GRAVITY * C.LAUNCH_GRAVITY : C.GRAVITY);
         if (wall) this.onWall(wall);
         if (pl.vy < 0) this.save.climbed += (-pl.vy * h) / C.PX_PER_M;
         // A launch lasts while it rises.
@@ -443,9 +443,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   // Any element's launch: you rise purple and invincible, and platforms turn one-way.
+  // The rise runs on lighter gravity (LAUNCH_GRAVITY); scaling the speed by its square root
+  // keeps the peak, height and sideways, exactly where full speed would put it.
   launch(vx, vy) {
     const pl = this.player;
-    Object.assign(pl, { vx, vy, ground: null, launched: true, fromY: pl.y });
+    const k = Math.sqrt(C.LAUNCH_GRAVITY);
+    Object.assign(pl, { vx: vx * k, vy: vy * k, ground: null, launched: true, fromY: pl.y });
     sfx.launch(1);
     buzz(15);
   }

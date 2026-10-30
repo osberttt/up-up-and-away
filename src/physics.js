@@ -4,8 +4,8 @@ export const MIN_X = C.WALL + C.PLAYER_R;
 export const MAX_X = C.W - C.WALL - C.PLAYER_R;
 
 // Free-flight step for any body {x, y, vx, vy}. Returns -1 / 1 when it bounced off the left / right wall.
-export function integrate(b, dt) {
-  b.vy = Math.min(b.vy + C.GRAVITY * dt, C.MAX_FALL);
+export function integrate(b, dt, gravity = C.GRAVITY) {
+  b.vy = Math.min(b.vy + gravity * dt, C.MAX_FALL);
   b.x += b.vx * dt;
   b.y += b.vy * dt;
   if (b.x < MIN_X) {
