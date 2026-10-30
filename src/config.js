@@ -7,7 +7,7 @@ export const H = Math.round(Math.min(1200, Math.max(900, (W * win.innerHeight) /
 export const WALL = 10;
 
 export const PLAYER_R = 16;
-export const GRAVITY = 2400; // px/s²
+export const GRAVITY = 2100; // px/s²
 export const MAX_FALL = 2600;
 // Height of a full-power vertical launch. Fixed (not tied to screen height) so the
 // generated tower is identical on every device.
@@ -16,10 +16,18 @@ export const PEAK = 640;
 // peaks just past the top of the screen.
 export const TOP_GAP = PEAK - 60;
 export const MIN_LAUNCH = 380; // px/s at the smallest drag
-export const MAX_LAUNCH = Math.sqrt(2 * GRAVITY * PEAK); // ~1753 px/s at a full drag
+export const MAX_LAUNCH = Math.sqrt(2 * GRAVITY * PEAK); // ~1640 px/s at a full drag
 export const WALL_BOUNCE = 0.8;
 
-export const MAX_CHARGES = 2; // double jump; only landing on a platform refills
+// Jumps are unlimited, on the ground or in the air, but each one starts a cooldown.
+export const JUMP_COOLDOWN = 0.3;
+export const HIT_STUN = 1; // no jumping for this long after a hazard hit, so you drop
+
+// Platforms are solid on every side (doors stay one-way). They are rare: the generator plans a
+// path of points up the tower and only this share of them becomes a platform (bouncy pads always do).
+export const PLATFORM_CHANCE = 0.5;
+export const SIDE_LEDGE_CHANCE = 0.18;
+export const PLAT_THICK = 12; // collision height of a platform below its top
 
 export const DRAG_DEADZONE = 16; // drags shorter than this cancel
 export const MAX_DRAG = 190; // drag length for full power
@@ -28,8 +36,10 @@ export const SLOWMO_RAMP = 0.9; // seconds of aiming until time is fully slowed
 
 export const CRUMBLE_TIME = 0.9;
 export const CRUMBLE_RESPAWN = 3.5;
-export const BOUNCE_MIN = 1700;
-export const BOUNCE_MAX = 2300;
+// Elements (bouncy pads, funnels, portals, elevators) launch you. While a launch is still
+// rising you are purple and see-through: hazards can't hurt you and platforms are one-way.
+export const BOUNCE_MIN = 2400;
+export const BOUNCE_MAX = 3000;
 export const HIT_COOLDOWN = 1;
 
 export const FUNNEL_W = 150; // mouth width of the funnel (an upside-down cone)
@@ -39,26 +49,54 @@ export const FUNNEL_NECK = 22; // half-width of the tube
 export const FUNNEL_SPEED = 900; // px/s while sliding through the funnel and its tube
 export const PORTAL_R = 26;
 export const WARP_TIME = 0.9; // seconds to fly from the blue portal to the yellow one
-export const PORTAL_EXIT = 1100; // upward speed (px/s) you leave the yellow portal with
-export const STAR_RESPAWN = 4; // seconds until a taken star comes back
+export const PORTAL_EXIT = 1700; // upward speed (px/s) you leave the yellow portal with
+export const FUNNEL_RISE = [900, 1300]; // px a funnel fires you above its top
 
-export const MAX_HP = 5;
-export const HEART_LIFE = 5; // seconds a heart lasts once it is on screen
-export const HEART_CHANCE = 0.3; // chance of a heart per main platform (from HEARTS_FROM up)
-// Heights (m) where each thing starts appearing in the tower.
-export const BOUNCY_FROM = 100;
-export const HEARTS_FROM = 250;
-export const STARS_FROM = 1500;
-export const SPIKES_FROM = 150; // spikes, saws and wall spikes
-export const FUNNELS_FROM = 500;
-export const PORTALS_FROM = 1000;
+// Elevator: a solid U you drop into from above. It carries you up ELEV_RISE px, speeding up,
+// over ELEV_TIME, fires you up at ELEV_LAUNCH, then sinks back over ELEV_RETURN.
+export const ELEV_INNER = 140; // inside width
+export const ELEV_WALL = 16;
+export const ELEV_DEPTH = 96;
+export const ELEV_RISE = [700, 1000];
+export const ELEV_TIME = 1.3;
+export const ELEV_LAUNCH = 2000;
+export const ELEV_RETURN = 3;
+export const ELEVATOR_CHANCE = 0.12;
+
+// Stars are only points: fly within STAR_RADIUS of one to collect it (once per run).
+export const STAR_RADIUS = 48;
+export const STAR_CHANCE = 0.55;
+
+export const MAX_HP = 3;
+export const HEART_LIFE = 10; // seconds a heart lasts once it is on screen
+export const HEART_RESPAWN = 12; // seconds after a heart is taken or fades until it comes back
+export const HEART_CHANCE = 0.3; // chance of a heart per main platform
+export const DOOR_EVERY = 100; // m between doors; passing one refills all hearts
 export const RESPAWN_DELAY = 0.9;
 
-export const PX_PER_M = 40;
+// Everything appears from the start; these are the odds per main platform.
+// Chance of a 1st, 2nd, 3rd... spike or saw beside the path in each gap (each rolled only if the previous one was).
+export const SPIKE_CHANCES = [0.75, 0.35, 0.1];
+export const SAW_CHANCE = 0.4; // share of those that move up and down
+export const WALL_SPIKE_CHANCE = 0.18;
+export const FUNNEL_CHANCE = 0.12;
+export const PORTAL_CHANCE = 0.15;
 
-// Heights (px above the ground) of the two tutorial bars. The first is one jump up, about a
-// third of a screen. The second is more than a full jump (PEAK) above it, so it needs the double jump.
-export const TUTORIAL_BARS = [340, 340 + PEAK + 120];
+// Score (per run; a death starts over). Height itself scores nothing.
+// Using a funnel, portal or bouncy pad scores once per object per run; every heart taken scores.
+export const SCORE_BOUNCY = 10;
+export const SCORE_HEART = 25;
+export const SCORE_FUNNEL = 50;
+export const SCORE_PORTAL = 75;
+export const SCORE_ELEVATOR = 60;
+export const SCORE_STAR = 20;
+// Reaching a door: DOOR_SCORE_MAX minus DOOR_SCORE_PER_SEC for every second since the
+// previous door (or the start of the run), never below DOOR_SCORE_MIN.
+export const DOOR_SCORE_MAX = 1500;
+export const DOOR_SCORE_PER_SEC = 50;
+export const DOOR_SCORE_MIN = 100;
+
+export const PX_PER_M = 40;
 
 export const FONT = '"Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif';
 

@@ -5,10 +5,9 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const TAU = Math.PI * 2;
 
-// Door heights in meters: 100, 200, 350, 550, 800, 1100, ... The gap grows by 50m each time
-// (an ease-in curve), and 25·n·(n+1) is always a multiple of 50.
+// Door heights in meters: 100, 200, 300, ...
 export function doorHeight(n) {
-  return 50 + 25 * n * (n + 1);
+  return C.DOOR_EVERY * n;
 }
 
 // Index of the first door above `heightM`.
@@ -31,6 +30,25 @@ export function hazardPos(hz, t) {
 export function funnelTube(x, y) {
   const neck = y - C.FUNNEL_D;
   return [x, neck, x, neck - C.FUNNEL_TUBE];
+}
+
+// How far (px, negative is up) an elevator is above its resting spot at time t: it speeds up
+// while riding, then eases back down after it fires you out.
+export function elevatorOffset(e, t) {
+  if (e.rideT != null) {
+    const k = Math.min(1, (t - e.rideT) / C.ELEV_TIME);
+    return -e.rise * k * k;
+  }
+  if (e.backT != null && t < e.backT + C.ELEV_RETURN) {
+    const k = (t - e.backT) / C.ELEV_RETURN;
+    return -e.rise * (1 - k * k * (3 - 2 * k));
+  }
+  return 0;
+}
+
+// Only a resting elevator is solid and can be entered.
+export function elevatorIdle(e, t) {
+  return e.rideT == null && (e.backT == null || t >= e.backT + C.ELEV_RETURN);
 }
 
 // Hearts drift around their spot on slow, smooth noise.
@@ -79,7 +97,7 @@ class Grid {
 export class Tower {
   constructor(day) {
     this.day = day;
-    this.seed = hashString(`chickenjumps:${day}`);
+    this.seed = hashString(`upupandaway:${day}`);
     this.rng = new Rng(this.seed);
     this.hue = this.rng.next();
     this.platforms = [];
@@ -94,18 +112,16 @@ export class Tower {
     this.starGrid = new Grid(600);
     this.funnels = [];
     this.funnelGrid = new Grid(600);
-    this.zones = []; // boxes around funnels, kept clear of everything else
+    this.elevators = [];
+    this.elevGrid = new Grid(600);
+    this.zones = []; // boxes around funnels and elevators, kept clear of everything else
     this.portals = [];
     this.portalGrid = new Grid(600);
     this.pendingPortal = null; // a blue portal waiting for its yellow exit higher up
     this.count = 0;
     this.doors = []; // doors[n] is the full-width floor at doorHeight(n)
     this.scratch = [];
-    this.addPlatform({ x: C.W / 2, y: 0, w: C.W, type: 'ground' });
-    // Tutorial: a full-width bar one jump up, then one only the double jump reaches.
-    // The generated tower starts from the second.
-    this.tutorial = C.TUTORIAL_BARS.map((y) => this.addPlatform({ x: C.W / 2, y: -y, w: C.W, type: 'ground' }));
-    this.lastMain = this.tutorial[this.tutorial.length - 1];
+    this.lastMain = this.addPlatform({ x: C.W / 2, y: 0, w: C.W, type: 'ground' });
   }
 
   addPlatform(p) {
@@ -146,6 +162,10 @@ export class Tower {
     return this.starGrid.query(y0, y1, out);
   }
 
+  elevatorsIn(y0, y1, out) {
+    return this.elevGrid.query(y0, y1, out);
+  }
+
   // Keep at least one screen of tower generated above y.
   ensureUpTo(y) {
     while (this.lastMain.y > y - C.H) this.step();
@@ -154,20 +174,14 @@ export class Tower {
   step() {
     const r = this.rng;
     const from = this.lastMain;
-    const k = ++this.count;
-    const h = -from.y / C.PX_PER_M;
-    const d = clamp(h / 800, 0, 1); // difficulty ramps over the first 800m
+    this.count++;
     const P = C.PEAK;
 
-    // Wide rest ledges give rhythm and catch falls; they get rarer higher up.
-    const isRest = k % Math.round(lerp(6, 13, d)) === 0;
-    let tier = 'easy';
-    if (!isRest && h > 12) {
-      const pHard = h < 40 ? 0 : lerp(0.1, 0.35, d);
-      const pMed = lerp(0.3, 0.45, d);
-      const roll = r.next();
-      tier = roll < pHard ? 'hard' : roll < pHard + pMed ? 'medium' : 'easy';
-    }
+    // No progression: the odds are the same at every height.
+    const pHard = 0.2;
+    const pMed = 0.38;
+    const tierRoll = r.next();
+    const tier = tierRoll < pHard ? 'hard' : tierRoll < pHard + pMed ? 'medium' : 'easy';
 
     // Vertical gap and how far sideways the next platform may sit. A launch reaches
     // horizontally 2·sqrt(P·(P−dy)) at height dy; we only use a fraction of that.
@@ -181,18 +195,15 @@ export class Tower {
       reach = 2 * Math.sqrt(P * (P - dy)) * (tier === 'easy' ? 0.5 : 0.7);
     }
 
-    let w = isRest ? r.range(290, 350) : lerp(250, 150, d) * r.range(0.85, 1.15);
+    let w = r.range(150, 250);
     let type = 'normal';
-    if (!isRest && h > 8) {
-      const pBouncy = h >= C.BOUNCY_FROM ? 0.18 : 0;
-      const pMove = h > 40 ? lerp(0.12, 0.25, d) : 0;
-      const pCrumble = h > 80 ? lerp(0.1, 0.22, d) : 0;
-      const roll = r.next();
-      if (roll < pBouncy) type = 'bouncy';
-      else if (roll < pBouncy + pMove) type = 'moving';
-      else if (roll < pBouncy + pMove + pCrumble) type = 'crumble';
-    }
+    const roll = r.next();
+    if (roll < 0.18) type = 'bouncy';
+    else if (roll < 0.36) type = 'moving';
+    else if (roll < 0.52) type = 'crumble';
     if (type === 'bouncy') w = Math.min(w, 150);
+    // Most path points stay empty air: platforms are rare. Bouncy pads are elements, so they stay.
+    if (type !== 'bouncy' && !r.chance(C.PLATFORM_CHANCE)) type = 'path';
 
     const minC = C.WALL + w / 2 + 4;
     const maxC = C.W - C.WALL - w / 2 - 4;
@@ -223,16 +234,56 @@ export class Tower {
         p.phase = r.range(0, TAU);
       }
     }
-    this.addPlatform(p);
+    // A 'path' point is never added as a platform; it only anchors the things placed around it.
+    if (type !== 'path') this.addPlatform(p);
     this.lastMain = p;
 
-    if (!isRest && r.chance(lerp(0.45, 0.2, d))) this.addSideLedge(from, p, h);
-    if (h >= C.SPIKES_FROM && r.chance(lerp(0.25, 0.65, d))) this.addSpike(from, p, h);
-    if (h >= C.SPIKES_FROM && r.chance(0.12)) this.addWallSpikes(from, p);
-    this.placePortals(from, p, h >= C.PORTALS_FROM && r.chance(0.15));
-    if (h >= C.FUNNELS_FROM && r.chance(0.12)) this.addFunnel(from, p);
-    this.addHeart(from, p, h);
-    this.addStar(from, p, h);
+    if (r.chance(C.SIDE_LEDGE_CHANCE)) this.addSideLedge(from, p);
+    for (const chance of C.SPIKE_CHANCES) {
+      if (!r.chance(chance)) break;
+      this.addSpike(from, p);
+    }
+    if (r.chance(C.WALL_SPIKE_CHANCE)) this.addWallSpikes(from, p);
+    this.placePortals(from, p, r.chance(C.PORTAL_CHANCE));
+    if (r.chance(C.FUNNEL_CHANCE)) this.addFunnel(from, p);
+    else if (r.chance(C.ELEVATOR_CHANCE)) this.addElevator(from, p);
+    this.addHeart(from, p);
+    this.addStar(from, p);
+  }
+
+  // Elevator: a U box (y is the bottom of its floor). Its rise column is reserved as a zone so
+  // nothing new is placed in the box's way.
+  addElevator(from, to) {
+    const r = this.rng;
+    const outer = C.ELEV_INNER / 2 + C.ELEV_WALL;
+    const rise = r.range(...C.ELEV_RISE);
+    for (let i = 0; i < 10; i++) {
+      const x = r.range(C.WALL + outer + 10, C.W - C.WALL - outer - 10);
+      const y = r.range(to.y + C.ELEV_DEPTH + 40, from.y - 40);
+      if (y < to.y + C.ELEV_DEPTH + 40) return;
+      const cy = y - C.ELEV_DEPTH / 2;
+      if (this.platformNear(x, cy, outer + 40, C.ELEV_DEPTH / 2 + 60) || this.hazardNear(x, cy, outer + 40, C.ELEV_DEPTH / 2 + 40)) continue;
+      if (this.doorNear(cy, C.ELEV_DEPTH + 60) !== null || this.portalNear(x, cy, outer + 60) || this.inZone(x, cy, C.ELEV_DEPTH)) continue;
+      const e = { x, y, rise, rideT: null, backT: null };
+      this.elevators.push(e);
+      // Indexed over its whole travel so it's found (and drawn) while it rides.
+      this.elevGrid.add(e, y - C.ELEV_DEPTH - rise - 20, y + 20);
+      this.zones.push({ x0: x - outer - 30, x1: x + outer + 30, y0: y - C.ELEV_DEPTH - 40, y1: y + 40 });
+      return;
+    }
+  }
+
+  // Stars (points only) hang along the path, so collecting them means flying the route.
+  addStar(from, to) {
+    const r = this.itemRng;
+    const roll = r.next();
+    const x = clamp(lerp(from.x, to.x, r.range(0.2, 0.8)) + r.range(-80, 80), C.WALL + 30, C.W - C.WALL - 30);
+    const y = lerp(from.y, to.y, r.range(0.3, 0.8));
+    if (roll > C.STAR_CHANCE) return;
+    if (this.hazardNear(x, y, 40, 40) || this.inZone(x, y, 30) || this.portalNear(x, y, 70) || this.platformNear(x, y, 30, 40)) return;
+    const st = { x, y };
+    this.stars.push(st);
+    this.starGrid.add(st, y - 20, y + 20);
   }
 
   // Doors are added as generation passes them, so their platform ids stay deterministic.
@@ -249,7 +300,7 @@ export class Tower {
   addFunnel(from, to) {
     const r = this.rng;
     const half = C.FUNNEL_W / 2;
-    const rise = r.range(450, 650);
+    const rise = r.range(...C.FUNNEL_RISE);
     const speed = r.range(60, 180);
     let spot = null;
     for (let i = 0; i < 12 && !spot; i++) {
@@ -360,37 +411,24 @@ export class Tower {
     }
   }
 
-  addHeart(from, to, h) {
+  // Runtime state: seenT starts the HEART_LIFE countdown, goneT the HEART_RESPAWN one.
+  addHeart(from, to) {
     const r = this.itemRng;
     const roll = r.next();
     const x = r.range(C.WALL + 60, C.W - C.WALL - 60);
     const y = lerp(from.y, to.y, r.range(0.3, 0.8));
     const seed = Math.floor(r.range(0, 1e6));
-    if (h < C.HEARTS_FROM || roll > C.HEART_CHANCE || this.hazardNear(x, y, 110, 90) || this.inZone(x, y, 60) || this.portalNear(x, y, 80)) return;
-    const ht = { x, y, seed, seenT: null, gone: false };
+    if (roll > C.HEART_CHANCE || this.hazardNear(x, y, 110, 90) || this.inZone(x, y, 60) || this.portalNear(x, y, 80)) return;
+    const ht = { x, y, seed, seenT: null, gone: false, goneT: 0 };
     this.hearts.push(ht);
     this.heartGrid.add(ht, y - 60, y + 60);
   }
 
-  // Stars (+1 jump) hang in the air along the climb, more often across the big gaps.
-  addStar(from, to, h) {
-    const r = this.itemRng;
-    const roll = r.next();
-    const x = clamp(lerp(from.x, to.x, r.range(0.3, 0.7)) + r.range(-40, 40), C.WALL + 30, C.W - C.WALL - 30);
-    const y = lerp(from.y, to.y, r.range(0.45, 0.7));
-    const big = from.y - to.y > C.PEAK * 0.7;
-    if (h < C.STARS_FROM || roll > (big ? 0.5 : 0.1)) return;
-    if (this.hazardNear(x, y, 50, 50) || this.inZone(x, y, 30) || this.portalNear(x, y, 70) || this.platformNear(x, y, 30, 40)) return;
-    const st = { x, y, takenT: null };
-    this.stars.push(st);
-    this.starGrid.add(st, y - 20, y + 20);
-  }
-
   // Optional ledge off to the side: a stepping stone or a place to land after a miss.
-  addSideLedge(from, to, h) {
+  addSideLedge(from, to) {
     const r = this.rng;
     const w = r.range(80, 140);
-    const crumble = h > 80 && r.chance(0.3);
+    const crumble = r.chance(0.3);
     const y = from.y - (from.y - to.y) * r.range(0.35, 0.7);
     const minC = C.WALL + w / 2 + 4;
     const maxC = C.W - C.WALL - w / 2 - 4;
@@ -402,13 +440,13 @@ export class Tower {
   }
 
   // Spiky ball beside the path, never in the column between `from` and `to`.
-  addSpike(from, to, h) {
+  addSpike(from, to) {
     const r = this.rng;
     const x0 = Math.min(from.x - from.w / 2, to.x - to.w / 2) - 40;
     const x1 = Math.max(from.x + from.w / 2, to.x + to.w / 2) + 40;
     for (let i = 0; i < 8; i++) {
       const rad = r.range(16, 26);
-      const amp = h > 150 && r.chance(0.4) ? r.range(40, 90) : 0;
+      const amp = r.chance(C.SAW_CHANCE) ? r.range(40, 90) : 0;
       const x = r.range(C.WALL + rad + 8, C.W - C.WALL - rad - 8);
       const yMin = to.y + rad + amp + 20;
       const yMax = from.y - rad - amp - 40;

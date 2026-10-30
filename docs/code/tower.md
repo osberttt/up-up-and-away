@@ -18,7 +18,7 @@ The day's tower. Generates platforms, doors, hazards and items from the date see
 
 Every player gets the same tower on the same day, and a reload rebuilds it exactly.
 
-- **Seed:** `hashString("chickenjumps:YYYY-MM-DD")`.
+- **Seed:** `hashString("upupandaway:YYYY-MM-DD")`.
 - **Two RNG streams:**
   - `rng` drives platforms, hazards, side ledges, funnels and portals.
   - `itemRng` (seeded `seed ^ 0x5bd1e995`) drives hearts and stars, so changing heart or star odds never moves a platform.

@@ -1,4 +1,4 @@
-# Chicken Jumps: System Design
+# Up Up and Away: System Design
 
 How the game is built: architecture, the main systems and their data, and the invariants that keep the daily tower fair and deterministic. For the gameplay itself, see [GDD.md](GDD.md).
 
@@ -67,7 +67,7 @@ State: `x, y, vx, vy, ground (platform|null), offset, charges, refill, hitT, squ
 ## 6. Tower generation
 
 ### 6.1 Determinism
-- Seed = FNV-1a hash of `"chickenjumps:YYYY-MM-DD"` (local date) → **mulberry32**. The daily hue is the RNG's first draw.
+- Seed = FNV-1a hash of `"upupandaway:YYYY-MM-DD"` (local date) → **mulberry32**. The daily hue is the RNG's first draw.
 - Generation is **strictly sequential** and depends only on the RNG and earlier output, never on game state or screen size (`PEAK` is a constant for this reason). Platform `id` = position in the array, so `{id, offset}` is a stable save reference.
 - Decoration (background shapes) uses a stateless `hash01(n)`, so it never consumes draws from the tower RNG.
 
@@ -105,7 +105,7 @@ Crumble timing is stored lazily on the platform (`crumbleAt`); `solid(p)` report
 
 ## 8. Persistence
 
-`localStorage["chickenjumps.save.v1"]` (an `upfall.save.v1` save from the old name is read once and removed):
+`localStorage["upupandaway.save.v1"]` (a save under an old name, `chickenjumps.save.v1` or `upfall.save.v1`, is read once and removed):
 
 ```json
 {

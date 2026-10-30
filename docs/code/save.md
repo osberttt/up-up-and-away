@@ -11,8 +11,8 @@ Loads and stores the save in `localStorage`. The game only remembers stats and b
 
 ## Storage
 
-- **Key:** `chickenjumps.save.v1`.
-- **Old name:** if that key is missing, `load` reads `upfall.save.v1` once, so saves from before the rename carry over. The next `store` removes the old key.
+- **Key:** `upupandaway.save.v1`.
+- **Old names:** if that key is missing, `load` reads `chickenjumps.save.v1` (or, failing that, `upfall.save.v1`) once, so saves from before a rename carry over. The next `store` removes the old keys.
 
 ```json
 {

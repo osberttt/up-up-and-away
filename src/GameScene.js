@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import * as C from './config.js';
-import { Tower, platformX, hazardPos, heartPos, doorHeight, nextDoorIndex } from './tower.js';
+import { Tower, platformX, hazardPos, heartPos, doorHeight, nextDoorIndex, elevatorOffset, elevatorIdle } from './tower.js';
 import { integrate, substeps, launchSpeed, previewPath, MIN_X, MAX_X } from './physics.js';
 import { dayKey } from './rng.js';
 import * as Save from './save.js';
@@ -41,6 +41,7 @@ export class GameScene extends Phaser.Scene {
     this.drawFunnels = [];
     this.drawPortals = [];
     this.drawStars = [];
+    this.drawElevs = [];
     this.nearItems = [];
     this.nearHearts = [];
 
@@ -52,20 +53,22 @@ export class GameScene extends Phaser.Scene {
       vy: 0,
       ground: this.tower.platforms[0],
       offset: 0,
-      charges: C.MAX_CHARGES, // the double jump; refilled by landing
+      jumpCd: 0, // seconds until the next jump is allowed
       hp: C.MAX_HP,
       dead: 0, // seconds left before respawning
       funnel: null, // { f, pts, seg, along } while sliding through a funnel
       portalT: 0, // portal cooldown
       warp: null, // { to, x0, y0, x1, y1, t, ang } while flying between portals
+      elevator: null, // the elevator carrying you
+      launched: false, // rising from an element's launch: invincible, platforms one-way
       hitT: 0,
       squash: 0,
       fromY: -R, // where the current flight started, to measure falls
     };
     if (import.meta.env?.DEV) this.devStart();
     this.height = this.heightOf(this.player.y);
-    this.aboveBest = true; // re-passing the best after dropping below it triggers NEW BEST
     this.nextDoor = nextDoorIndex(this.save.best);
+    this.newRun();
     this.colTo = this.colFrom = this.col = palette(this.tower, this.nextDoor - 1);
     this.colT = 0;
 
@@ -88,14 +91,12 @@ export class GameScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- setup
 
-  // No title card: the game starts right away, and the first two bars teach the controls.
-  // The texts live in the world, between the ground and the first bar and above the first bar.
+  // No title card: the game starts right away. The texts live in the world, just above the ground.
   addTutorial() {
-    const [b1, b2] = this.tower.tutorial;
     const text = (y, s) => label(this, C.W / 2, y, s, 21, 0.85, false).setWordWrapWidth(C.W - 120).setLineSpacing(4);
     return [
-      text(b1.y / 2, 'drag anywhere and release it\nto shoot the blob up'),
-      text(b1.y + (b2.y - b1.y) * 0.4, 'while the blob is in the air,\ndrag and release it to shoot it up again'),
+      text(-170, 'drag anywhere and release it\nto shoot the blob up'),
+      text(-560, 'drag again in the air\nto keep going up'),
     ];
   }
 
@@ -160,6 +161,37 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  // Score is per run: page load or a death starts a new one.
+  newRun() {
+    this.score = 0;
+    this.runDoor = nextDoorIndex(this.height); // next door that scores and refills hearts in this run
+    this.doorT = this.runT; // when the run reached its last door (or started)
+    this.scored = new Set(); // funnels, portals, elevators, bouncy pads and stars already scored this run
+    this.beatBest = this.save.score === 0; // no NEW BEST banner on a day's first run
+  }
+
+  // Adds points to the run, with a floating "+n" at (x, y) unless x is null.
+  // `once` scores an object only once per run.
+  addScore(pts, x, y, once = null) {
+    if (once) {
+      if (this.scored.has(once)) return;
+      this.scored.add(once);
+    }
+    this.score += pts;
+    this.hud.punch(pts);
+    if (x != null) this.scorePop(x, y - 30, pts);
+    const s = this.save;
+    if (this.score > s.score) {
+      s.score = this.score;
+      this.dirty = true;
+      if (!this.beatBest) {
+        this.beatBest = true;
+        this.hud.announce('NEW BEST');
+        sfx.best();
+      }
+    }
+  }
+
   persist() {
     Save.store(this.save);
     this.dirty = false;
@@ -167,7 +199,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   restartTower() {
-    Object.assign(this.save, { best: 0, falls: 0, bigFall: 0, climbed: 0, deaths: 0 });
+    Object.assign(this.save, { best: 0, score: 0, falls: 0, bigFall: 0, climbed: 0, deaths: 0 });
     Save.store(this.save);
     this.scene.restart();
   }
@@ -187,7 +219,7 @@ export class GameScene extends Phaser.Scene {
 
   tryLaunch(aim) {
     const pl = this.player;
-    if (pl.dead || pl.funnel || pl.warp) return;
+    if (pl.dead || pl.funnel || pl.warp || pl.elevator) return;
     if (this.jumpsLeft() <= 0) {
       sfx.empty();
       return;
@@ -197,9 +229,10 @@ export class GameScene extends Phaser.Scene {
       pl.ground = null;
       pl.fromY = pl.y;
     }
+    pl.launched = false; // your own jump ends an element's launch
     pl.vx = aim.x * speed;
     pl.vy = aim.y * speed;
-    pl.charges--;
+    pl.jumpCd = C.JUMP_COOLDOWN;
     sfx.launch(aim.power);
     this.burst(pl.x, pl.y, this.col.spark, 6, 160, -aim.x, -aim.y);
   }
@@ -209,7 +242,7 @@ export class GameScene extends Phaser.Scene {
   update(time, delta) {
     const dt = Math.min(delta / 1000, 0.05);
     const pl = this.player;
-    const aim = this.paused || pl.dead || pl.funnel || pl.warp ? null : this.aim();
+    const aim = this.paused || pl.dead || pl.funnel || pl.warp || pl.elevator ? null : this.aim();
 
     if (!this.paused) {
       // The run timer counts real seconds, so slow motion doesn't slow the clock.
@@ -251,9 +284,12 @@ export class GameScene extends Phaser.Scene {
     }
     if (pl.hitT > 0) pl.hitT -= dt;
     if (pl.portalT > 0) pl.portalT -= dt;
-    if (pl.funnel || pl.warp) {
+    if (pl.jumpCd > 0) pl.jumpCd -= dt;
+    if (pl.funnel || pl.warp || pl.elevator) {
       if (pl.funnel) this.slideFunnel(dt);
-      else this.slideWarp(dt);
+      else if (pl.warp) this.slideWarp(dt);
+      else this.rideElevator();
+      this.updateStars();
       this.updateHeight();
       return;
     }
@@ -272,22 +308,147 @@ export class GameScene extends Phaser.Scene {
       // Substeps keep fast bounces from skipping through platforms.
       const n = substeps(pl, dt);
       const h = dt / n;
-      for (let i = 0; i < n && !pl.ground; i++) {
+      for (let i = 0; i < n && !pl.ground && !pl.elevator; i++) {
         const prevY = pl.y;
         const wall = integrate(pl, h);
         if (wall) this.onWall(wall);
         if (pl.vy < 0) this.save.climbed += (-pl.vy * h) / C.PX_PER_M;
-        if (pl.vy > 0) this.checkLanding(prevY);
+        // A launch lasts while it rises.
+        if (pl.launched && pl.vy >= 0) pl.launched = false;
+        this.collide(prevY);
       }
-      this.checkFunnels();
-      if (!pl.funnel) this.checkPortals();
+      if (!pl.elevator) this.checkFunnels();
+      if (!pl.funnel && !pl.elevator) this.checkPortals();
     }
-    if (pl.hitT <= 0 && !pl.funnel) this.checkHazards();
+    if (pl.hitT <= 0 && !pl.funnel && !pl.elevator && !pl.launched) this.checkHazards();
     if (!pl.dead) {
       this.updateHearts();
       this.updateStars();
     }
     this.updateHeight();
+  }
+
+  // Stars are points only: anything within STAR_RADIUS is collected, once per run.
+  updateStars() {
+    const pl = this.player;
+    const rr = C.STAR_RADIUS ** 2;
+    for (const st of this.tower.starsIn(pl.y - C.STAR_RADIUS, pl.y + C.STAR_RADIUS, this.nearItems)) {
+      if (this.scored.has(st) || (pl.x - st.x) ** 2 + (pl.y - st.y) ** 2 > rr) continue;
+      this.addScore(C.SCORE_STAR, st.x, st.y, st);
+      sfx.star();
+      buzz(8);
+      this.burst(st.x, st.y, STAR, 10, 180);
+    }
+  }
+
+  // Carried up inside the elevator; at the top of its rise it fires you out.
+  rideElevator() {
+    const pl = this.player;
+    const e = pl.elevator;
+    pl.x = e.x;
+    pl.y = e.y - C.ELEV_WALL - C.PLAYER_R + elevatorOffset(e, this.simT);
+    if (this.simT < e.rideT + C.ELEV_TIME) return;
+    e.rideT = null;
+    e.backT = this.simT;
+    pl.elevator = null;
+    this.launch(0, -C.ELEV_LAUNCH);
+    this.burst(pl.x, pl.y, this.col.deco, 12, 260, 0, -1);
+  }
+
+  // Any element's launch: you rise purple and invincible, and platforms turn one-way.
+  launch(vx, vy) {
+    const pl = this.player;
+    Object.assign(pl, { vx, vy, ground: null, launched: true, fromY: pl.y });
+    sfx.launch(1);
+    buzz(15);
+  }
+
+  // Solid platforms: every side blocks. Doors and crumbling platforms (and every platform while
+  // launched) are one-way: you pass up through them and land on top.
+  // Elevators are solid U boxes while they wait at the bottom; landing on the floor inside rides one.
+  collide(prevY) {
+    const pl = this.player;
+    const R = C.PLAYER_R;
+    for (const p of this.tower.platformsIn(pl.y - 60, pl.y + 60, this.near)) {
+      if (pl.ground || !this.solid(p)) continue;
+      const px = platformX(p, this.simT);
+      if (p.type === 'door' || p.type === 'crumble' || pl.launched) {
+        if (pl.vy > 0 && prevY + R <= p.y + 0.01 && pl.y + R >= p.y && Math.abs(pl.x - px) <= p.w / 2 + R * 0.4) this.land(p, px);
+        continue;
+      }
+      const thick = p.type === 'bouncy' ? 14 : C.PLAT_THICK;
+      const vy = pl.vy; // pushOut zeroes it
+      const hit = this.pushOut(px - p.w / 2, p.y, px + p.w / 2, p.y + thick);
+      if (hit === 'top' && vy >= 0) this.land(p, px, vy);
+    }
+    if (pl.launched || pl.ground) return;
+    for (const e of this.tower.elevatorsIn(pl.y - 120, pl.y + 120, this.nearItems)) {
+      if (!elevatorIdle(e, this.simT)) continue;
+      const half = C.ELEV_INNER / 2;
+      const Wl = C.ELEV_WALL;
+      const top = e.y - C.ELEV_DEPTH;
+      this.pushOut(e.x - half - Wl, top, e.x - half, e.y);
+      this.pushOut(e.x + half, top, e.x + half + Wl, e.y);
+      if (this.pushOut(e.x - half - Wl, e.y - Wl, e.x + half + Wl, e.y) === 'top' && Math.abs(pl.x - e.x) < half) {
+        this.enterElevator(e);
+        return;
+      }
+    }
+  }
+
+  // Pushes the player's circle out of a box. Returns 'top', 'bottom' or 'side' for the face hit, or null.
+  // Hitting the underside or a side stops (and slightly bounces) that part of the motion.
+  pushOut(x0, y0, x1, y1) {
+    const pl = this.player;
+    const R = C.PLAYER_R;
+    const cx = clamp(pl.x, x0, x1);
+    const cy = clamp(pl.y, y0, y1);
+    let dx = pl.x - cx;
+    let dy = pl.y - cy;
+    let d = Math.hypot(dx, dy);
+    if (d >= R) return null;
+    if (d === 0) {
+      // Center inside the box: leave the way it is moving out of.
+      dx = 0;
+      dy = pl.vy >= 0 ? -1 : 1;
+      d = 0;
+      pl.y = dy < 0 ? y0 - R : y1 + R;
+    } else {
+      pl.x += (dx / d) * (R - d);
+      pl.y += (dy / d) * (R - d);
+      dx /= d;
+      dy /= d;
+    }
+    if (dy < -0.6) {
+      if (pl.vy > 0) pl.vy = 0;
+      return 'top';
+    }
+    if (dy > 0.6) {
+      if (pl.vy < 0) {
+        pl.vy = -pl.vy * 0.15;
+        sfx.wall();
+        this.burst(pl.x, pl.y - R, this.col.plat, 4, 100, 0, 1);
+      }
+      return 'bottom';
+    }
+    if (pl.vx * dx < 0) {
+      pl.vx = -pl.vx * 0.4;
+      sfx.wall();
+    }
+    return 'side';
+  }
+
+  enterElevator(e) {
+    const pl = this.player;
+    e.rideT = this.simT;
+    e.backT = null;
+    pl.elevator = e;
+    pl.vx = pl.vy = 0;
+    this.recordFall();
+    this.trail.length = 0;
+    this.addScore(C.SCORE_ELEVATOR, pl.x, pl.y, e);
+    sfx.funnel();
+    buzz(12);
   }
 
   // Anywhere inside a funnel's cone counts (its mouth faces down): it swallows you and
@@ -300,6 +461,7 @@ export class GameScene extends Phaser.Scene {
       if (k < 0 || k > 1 || Math.abs(pl.x - f.x) > half + C.PLAYER_R * 0.3) continue;
       pl.funnel = { f, pts: [pl.x, pl.y, ...f.tube], seg: 0, along: 0 };
       pl.vx = pl.vy = 0;
+      this.addScore(C.SCORE_FUNNEL, pl.x, pl.y, f);
       this.trail.length = 0;
       sfx.funnel();
       buzz(12);
@@ -337,8 +499,8 @@ export class GameScene extends Phaser.Scene {
     const pl = this.player;
     const f = pl.funnel.f;
     const [x, y] = f.tube.slice(-2);
-    Object.assign(pl, { funnel: null, x, y, vx: f.vx, vy: f.vy, fromY: y });
-    sfx.launch(1);
+    Object.assign(pl, { funnel: null, x, y });
+    this.launch(f.vx, f.vy);
     this.burst(x, y, this.col.deco, 8, 200, Math.sign(f.vx) * 0.3, -1);
   }
 
@@ -355,6 +517,7 @@ export class GameScene extends Phaser.Scene {
       const to = pt.pair;
       if (!to) return;
       pl.warp = { to, x0: pl.x, y0: pl.y, x1: to.x, y1: to.y, t: 0, ang: Math.atan2(to.y - pl.y, to.x - pl.x) };
+      this.addScore(C.SCORE_PORTAL, pl.x, pl.y, pt);
       this.burst(pl.x, pl.y, portalColor(pt), 10, 200);
       sfx.portal();
       buzz(15);
@@ -362,8 +525,9 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // 1 when the jump cooldown is over, else 0. Jumps are unlimited otherwise.
   jumpsLeft() {
-    return this.player.charges;
+    return this.player.jumpCd > 0 ? 0 : 1;
   }
 
   slideWarp(dt) {
@@ -376,26 +540,13 @@ export class GameScene extends Phaser.Scene {
     pl.y = w.y0 + (w.y1 - w.y0) * e;
     if (k < 1) return;
     // No momentum carried over: a small push straight up, however you went in.
-    Object.assign(pl, { warp: null, vx: 0, vy: -C.PORTAL_EXIT, fromY: pl.y, portalT: 0.3 });
+    Object.assign(pl, { warp: null, portalT: 0.3 });
+    this.launch(0, -C.PORTAL_EXIT);
     this.burst(pl.x, pl.y, portalColor(w.to), 10, 200);
   }
 
-  // A star is one extra jump. Taken stars come back after STAR_RESPAWN.
-  updateStars() {
-    const pl = this.player;
-    const rr = (C.PLAYER_R + 14) ** 2;
-    for (const st of this.tower.starsIn(pl.y - 40, pl.y + 40, this.nearItems)) {
-      if (st.takenT != null && this.simT - st.takenT < C.STAR_RESPAWN) continue;
-      if ((pl.x - st.x) ** 2 + (pl.y - st.y) ** 2 > rr) continue;
-      st.takenT = this.simT;
-      pl.charges++; // landing resets to the double jump again
-      sfx.star();
-      buzz(10);
-      this.burst(st.x, st.y, STAR, 10, 180);
-    }
-  }
-
   // Hearts start a HEART_LIFE countdown the first time they are on screen, then vanish.
+  // A taken or faded heart comes back HEART_RESPAWN later, so hearts never run out.
   // At full HP you pass through them; they stay for when you need them.
   updateHearts() {
     const pl = this.player;
@@ -403,7 +554,11 @@ export class GameScene extends Phaser.Scene {
     const rr = (C.PLAYER_R + 16) ** 2;
     const full = pl.hp >= C.MAX_HP;
     for (const ht of this.tower.heartsIn(top - 60, top + C.H + 60, this.nearHearts)) {
-      if (ht.gone) continue;
+      if (ht.gone) {
+        if (this.simT - ht.goneT < C.HEART_RESPAWN) continue;
+        ht.gone = false;
+        ht.seenT = null;
+      }
       const [x, y] = heartPos(ht, this.simT);
       if (ht.seenT == null) {
         if (y < top || y > top + C.H) continue;
@@ -411,11 +566,14 @@ export class GameScene extends Phaser.Scene {
       }
       if (this.simT - ht.seenT > C.HEART_LIFE) {
         ht.gone = true;
+        ht.goneT = this.simT;
         sfx.heartGone();
         this.burst(x, y, this.col.heart, 6, 90);
       } else if (!full && (pl.x - x) ** 2 + (pl.y - y) ** 2 < rr) {
         ht.gone = true;
+        ht.goneT = this.simT;
         pl.hp++;
+        this.addScore(C.SCORE_HEART, x, y);
         this.dirty = true;
         sfx.heart();
         buzz(15);
@@ -434,41 +592,22 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
-  // Platforms are one-way: only a falling body that crosses a top surface lands.
-  checkLanding(prevY) {
+  land(p, px, impact = this.player.vy) {
     const pl = this.player;
-    const R = C.PLAYER_R;
-    let hit = null;
-    let hitX = 0;
-    for (const p of this.tower.platformsIn(pl.y - 40, pl.y + 60, this.near)) {
-      if (prevY + R > p.y + 0.01 || pl.y + R < p.y || !this.solid(p)) continue;
-      const px = platformX(p, this.simT);
-      if (Math.abs(pl.x - px) > p.w / 2 + R * 0.4) continue;
-      if (!hit || p.y < hit.y) {
-        hit = p;
-        hitX = px;
-      }
-    }
-    if (hit) this.land(hit, hitX);
-  }
-
-  land(p, px) {
-    const pl = this.player;
-    const impact = pl.vy;
     pl.y = p.y - C.PLAYER_R;
-    pl.charges = C.MAX_CHARGES;
     this.recordFall();
     pl.fromY = pl.y;
 
     if (p.type === 'bouncy') {
-      pl.vy = -clamp(impact * 1.3, C.BOUNCE_MIN, C.BOUNCE_MAX);
+      this.launch(pl.vx, -clamp(impact * 1.3, C.BOUNCE_MIN, C.BOUNCE_MAX));
       p.squashT = this.simT;
+      this.addScore(C.SCORE_BOUNCY, pl.x, p.y, p);
       sfx.bounce();
-      buzz(10);
       this.burst(pl.x, p.y, this.col.bouncy, 10, 280, 0, -1);
       return;
     }
 
+    pl.launched = false;
     pl.ground = p;
     pl.offset = clamp(pl.x - px, -p.w / 2, p.w / 2);
     pl.vx = 0;
@@ -513,14 +652,14 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // A hazard costs a heart, stops you and drains your jumps, so you drop. The last heart kills.
+  // A hazard costs a heart, stops you and locks jumping for HIT_STUN, so you drop. The last heart kills.
   hit() {
     const pl = this.player;
     pl.hp--;
     this.dirty = true;
     if (pl.hp <= 0) return this.die();
     pl.hitT = C.HIT_COOLDOWN;
-    pl.charges = 0;
+    pl.jumpCd = C.HIT_STUN;
     pl.ground = null;
     pl.vx *= 0.15;
     pl.vy = Math.max(pl.vy, 150);
@@ -550,10 +689,12 @@ export class GameScene extends Phaser.Scene {
   respawn() {
     const pl = this.player;
     const p = this.tower.platforms[0];
-    Object.assign(pl, { dead: 0, hp: C.MAX_HP, ground: p, offset: 0, vx: 0, vy: 0, charges: C.MAX_CHARGES, hitT: C.HIT_COOLDOWN });
+    Object.assign(pl, { dead: 0, hp: C.MAX_HP, ground: p, offset: 0, vx: 0, vy: 0, jumpCd: 0, hitT: C.HIT_COOLDOWN, launched: false, elevator: null });
     pl.x = C.W / 2;
     pl.y = pl.fromY = p.y - C.PLAYER_R;
     this.runT = 0; // a death starts a new run
+    this.height = 0;
+    this.newRun();
     this.cameras.main.scrollY = this.cameraTarget();
     this.hud.announce('BACK TO 0m');
     sfx.respawn();
@@ -565,22 +706,33 @@ export class GameScene extends Phaser.Scene {
   }
 
   updateHeight() {
-    const h = this.heightOf(this.player.y);
+    const pl = this.player;
+    const h = this.heightOf(pl.y);
     this.height = h;
+    // Every door reached in this run (once per run, even if it was opened earlier) scores by how
+    // fast you got there from the previous one, and refills all hearts.
+    while (h >= doorHeight(this.runDoor)) {
+      const secs = this.runT - this.doorT;
+      const pts = Math.max(C.DOOR_SCORE_MIN, Math.round(C.DOOR_SCORE_MAX - C.DOOR_SCORE_PER_SEC * secs));
+      this.hud.announce(`${doorHeight(this.runDoor)}m  +${pts}`);
+      this.addScore(pts, null, null); // the banner shows the points
+      this.runDoor++;
+      this.doorT = this.runT;
+      if (pl.hp < C.MAX_HP) {
+        pl.hp = C.MAX_HP;
+        this.dirty = true;
+        sfx.heart();
+        this.burst(pl.x, pl.y, this.col.heart, 14, 220);
+      }
+    }
+    // Today's best height only decides which doors are open; it isn't the score.
     const s = this.save;
     if (h > s.best) {
-      const prev = s.best;
       s.best = h;
-      if (!this.aboveBest) {
-        this.aboveBest = true;
-        this.hud.announce('NEW BEST');
-        sfx.best();
-      }
       // Passing a door opens its floor: from now on today you can't fall below it.
       while (h >= doorHeight(this.nextDoor)) {
         const door = this.tower.doors[this.nextDoor];
         if (door) door.openT = this.simT;
-        this.hud.announce(`DOOR ${doorHeight(this.nextDoor)}m`);
         sfx.door();
         buzz(30);
         this.nextDoor++;
@@ -589,8 +741,6 @@ export class GameScene extends Phaser.Scene {
         this.colTo = palette(this.tower, this.nextDoor - 1);
         this.colT = this.time.now;
       }
-    } else if (h < s.best - 3) {
-      this.aboveBest = false;
     }
   }
 
@@ -672,6 +822,25 @@ export class GameScene extends Phaser.Scene {
         size: 2 + Math.random() * 3,
       });
     }
+  }
+
+  // A big "+n" that pops in with an overshoot and a little tilt, sparkles, then floats up and fades.
+  // Bigger points get a bigger number.
+  scorePop(x, y, pts) {
+    const size = Math.round(34 + Math.min(22, pts / 4));
+    x = clamp(x, C.WALL + 50, C.W - C.WALL - 50);
+    const t = label(this, x, y, `+${pts}`, size, 1, false)
+      .setColor(hex(STAR))
+      .setStroke(hex(this.col.ink), 8)
+      .setShadow(0, 4, 'rgba(0,0,0,0.3)', 8)
+      .setDepth(45)
+      .setScale(0.2)
+      .setAngle(Phaser.Math.Between(-10, 10));
+    this.tweens.add({ targets: t, scale: 1.3, duration: 140, ease: 'Back.Out' });
+    this.tweens.add({ targets: t, scale: 1, angle: 0, delay: 140, duration: 220, ease: 'Sine.Out' });
+    this.tweens.add({ targets: t, y: y - 90, duration: 1100, ease: 'Cubic.Out' });
+    this.tweens.add({ targets: t, alpha: 0, delay: 750, duration: 350, onComplete: () => t.destroy() });
+    this.burst(x, y, STAR, 10 + Math.min(10, pts / 8), 240);
   }
 
   floatText(x, y, text) {

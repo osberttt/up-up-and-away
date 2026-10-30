@@ -1,4 +1,4 @@
-# Chicken Jumps: Game Design Document
+# Up Up and Away: Game Design Document
 
 **Genre:** endless vertical arcade climber · **Platform:** mobile browser (also desktop) · **Mode:** offline, single player · **Engine:** Phaser 3
 

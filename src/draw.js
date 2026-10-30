@@ -1,6 +1,6 @@
 import * as C from './config.js';
 import { hash01 } from './rng.js';
-import { platformX, hazardPos, heartPos, doorHeight } from './tower.js';
+import { platformX, hazardPos, heartPos, doorHeight, elevatorOffset } from './tower.js';
 import { FAMILIES, FAMILY, OBJECTS, expand, mixColor } from './palettes.js';
 
 const TAU = Math.PI * 2;
@@ -8,6 +8,7 @@ const OUTLINE = 2.5; // ink outline around every object
 
 export const HEART = OBJECTS.heart;
 export const STAR = OBJECTS.star;
+const LAUNCHED = 0xa24dff; // the player while an element's launch makes it invincible
 export const portalColor = (pt) => (pt.color === 'blue' ? OBJECTS.portalBlue : OBJECTS.portalYellow);
 export const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
 
@@ -84,8 +85,9 @@ export function drawWorld(sc, aim) {
   for (const hz of sc.tower.hazardsIn(top - 140, bottom + 140, sc.drawHaz)) drawHazard(sc, g, hz, col);
   for (const f of sc.tower.funnelsIn(top - 20, bottom + 260, sc.drawFunnels)) drawFunnel(sc, g, f, col);
   for (const pt of sc.tower.portalsIn(top - 40, bottom + 40, sc.drawPortals)) drawPortal(sc, g, pt, col);
+  for (const e of sc.tower.elevatorsIn(top - 20, bottom + 20, sc.drawElevs)) drawElevator(sc, g, e, col);
   drawPortalFx(sc, g);
-  for (const st of sc.tower.starsIn(top - 30, bottom + 30, sc.drawStars)) drawStar(sc, g, st, col);
+  for (const st of sc.tower.starsIn(top - 60, bottom + 60, sc.drawStars)) drawStar(sc, g, st, col);
   for (const ht of sc.tower.heartsIn(top - 60, bottom + 60, sc.drawHearts)) drawPickup(sc, g, ht, col);
   drawTrail(sc, g);
   if (aim) drawAim(sc, g, col, aim);
@@ -155,20 +157,20 @@ function drawPlatform(sc, g, p, col) {
       g.fillStyle(col.plat, 1).fillRect(C.WALL, p.y, C.W - 2 * C.WALL, 6);
       break;
     case 'normal':
-      oneWay(g, x0, p.y, p.w, col);
+      slab(g, x0, p.y, p.w, col);
       break;
     case 'moving': {
       g.lineStyle(2, col.plat, 0.2);
-      g.lineBetween(p.x - p.amp - p.w / 2, p.y + 4, p.x + p.amp + p.w / 2, p.y + 4);
-      oneWay(g, x0, p.y, p.w, col);
+      g.lineBetween(p.x - p.amp - p.w / 2, p.y + T / 2, p.x + p.amp + p.w / 2, p.y + T / 2);
+      slab(g, x0, p.y, p.w, col);
       g.fillStyle(col.bg, 0.9);
-      g.fillCircle(x0 + 9, p.y + 4, 2);
-      g.fillCircle(x0 + p.w - 9, p.y + 4, 2);
+      g.fillCircle(x0 + 9, p.y + T / 2, 2);
+      g.fillCircle(x0 + p.w - 9, p.y + T / 2, 2);
       break;
     }
     case 'crumble': {
       if (!sc.solid(p)) {
-        g.lineStyle(1.5, col.plat, 0.2).strokeRect(x0, p.y, p.w, 8);
+        g.lineStyle(1.5, col.plat, 0.2).strokeRect(x0, p.y, p.w, T);
         break;
       }
       const shaking = p.crumbleAt != null;
@@ -179,7 +181,7 @@ function drawPlatform(sc, g, p, col) {
       g.fillStyle(col.plat, shaking ? 0.4 + 0.6 * left : 1);
       for (let i = 0; i < pieces; i++) {
         const dy = shaking ? (1 - left) * (i % 2 ? 4 : -2) : 0;
-        g.fillRect(x0 + i * (pw + 4) + jitter, p.y + dy, pw, 8);
+        g.fillRect(x0 + i * (pw + 4) + jitter, p.y + dy, pw, T);
       }
       break;
     }
@@ -196,11 +198,50 @@ function drawPlatform(sc, g, p, col) {
   }
 }
 
-// Every platform is one-way: a thin bar with a dashed shadow, so it reads as passable from below.
-function oneWay(g, x0, y, w, col) {
-  g.fillStyle(col.plat, 1).fillRoundedRect(x0, y, w, 8, 3);
-  g.fillStyle(col.plat, 0.25);
-  for (let x = x0 + 4; x < x0 + w - 6; x += 14) g.fillRect(x, y + 12, 7, 2);
+const T = C.PLAT_THICK;
+
+// Platforms are solid: a thick block with an ink outline, so it reads as a wall from every side.
+function slab(g, x0, y, w, col) {
+  g.fillStyle(col.ink, 1).fillRoundedRect(x0 - OUTLINE, y - OUTLINE, w + 2 * OUTLINE, T + 2 * OUTLINE, 4);
+  g.fillStyle(col.plat, 1).fillRoundedRect(x0, y, w, T, 3);
+}
+
+// Elevator: a U box. Faint rails show how far it will carry you.
+function drawElevator(sc, g, e, col) {
+  const off = elevatorOffset(e, sc.simT);
+  const y = e.y + off;
+  const half = C.ELEV_INNER / 2;
+  const Wl = C.ELEV_WALL;
+  const top = y - C.ELEV_DEPTH;
+  g.lineStyle(2, col.ink, 0.18);
+  g.lineBetween(e.x - half - Wl / 2, e.y - C.ELEV_DEPTH, e.x - half - Wl / 2, e.y - C.ELEV_DEPTH - e.rise);
+  g.lineBetween(e.x + half + Wl / 2, e.y - C.ELEV_DEPTH, e.x + half + Wl / 2, e.y - C.ELEV_DEPTH - e.rise);
+  const pts = [
+    { x: e.x - half - Wl, y: top },
+    { x: e.x - half - Wl, y },
+    { x: e.x + half + Wl, y },
+    { x: e.x + half + Wl, y: top },
+    { x: e.x + half, y: top },
+    { x: e.x + half, y: y - Wl },
+    { x: e.x - half, y: y - Wl },
+    { x: e.x - half, y: top },
+  ];
+  g.fillStyle(col.bouncy, 1).fillPoints(pts, true);
+  g.lineStyle(OUTLINE, col.ink, 1).strokePoints(pts, true, true);
+  // An up arrow inside while it waits.
+  if (off === 0) {
+    g.fillStyle(col.ink, 0.45).fillTriangle(e.x, top + 12, e.x - 10, top + 28, e.x + 10, top + 28);
+  }
+}
+
+// A star: points only. The faint ring is the radius it is collected from. Gone once collected this run.
+function drawStar(sc, g, st, col) {
+  if (sc.scored.has(st)) return;
+  const t = sc.simT;
+  const bob = Math.sin(t * 3 + st.x) * 3;
+  g.lineStyle(1.5, col.ink, 0.18).strokeCircle(st.x, st.y + bob, C.STAR_RADIUS);
+  g.fillStyle(0xffffff, 0.25).fillCircle(st.x, st.y + bob, 18);
+  inkStar(g, st.x, st.y + bob, 12, 5, -Math.PI / 2 + Math.sin(t * 2) * 0.15, 0.45, STAR, col.ink);
 }
 
 // A door is drawn in the color of the section above it (the background you get by passing it).
@@ -348,20 +389,6 @@ function drawPortalFx(sc, g) {
   }
 }
 
-// A star (+1 jump). A taken star shows as a faint outline that grows back.
-function drawStar(sc, g, st, col) {
-  const t = sc.simT;
-  const since = st.takenT == null ? Infinity : t - st.takenT;
-  const bob = Math.sin(t * 3 + st.x) * 3;
-  if (since < C.STAR_RESPAWN) {
-    const pts = starPts(st.x, st.y + bob, 4 + 8 * (since / C.STAR_RESPAWN), 5, -Math.PI / 2, 0.45);
-    g.lineStyle(1.5, col.ink, 0.35).strokePoints(pts, true, true);
-    return;
-  }
-  g.fillStyle(0xffffff, 0.25).fillCircle(st.x, st.y + bob, 20);
-  inkStar(g, st.x, st.y + bob, 13, 5, -Math.PI / 2 + Math.sin(t * 2) * 0.15, 0.45, col.star, col.ink);
-}
-
 // A heart pickup: pulses while alive and blinks through its last 1.5s.
 function drawPickup(sc, g, ht, col) {
   const t = sc.simT;
@@ -375,8 +402,8 @@ function drawPickup(sc, g, ht, col) {
   inkHeart(g, x, y - 1, s, col.heart, col.ink);
 }
 
-// Blue while a jump is left, red when out of jumps.
-const playerColor = (sc) => (sc.jumpsLeft() > 0 ? OBJECTS.canJump : OBJECTS.cantJump);
+// Purple while launched by an element, else blue when a jump is ready, red while it cools down.
+const playerColor = (sc) => (sc.player.launched || sc.player.elevator ? LAUNCHED : sc.jumpsLeft() > 0 ? OBJECTS.canJump : OBJECTS.cantJump);
 
 function drawTrail(sc, g) {
   const tr = sc.trail;
@@ -471,8 +498,9 @@ function drawPlayer(sc, g, col, aim) {
     y = pl.y;
   }
   const flash = pl.hitT > 0 && Math.floor(pl.hitT * 16) % 2 === 0;
-  g.fillStyle(col.ink, 1);
+  const alpha = pl.launched || pl.elevator ? 0.6 : 1; // see-through while invincible
+  g.fillStyle(col.ink, alpha);
   ellipse(g, pl.x, y, R * sx + 3, R * sy + 3, ang);
-  g.fillStyle(flash ? 0xffffff : playerColor(sc), 1);
+  g.fillStyle(flash ? 0xffffff : playerColor(sc), alpha);
   ellipse(g, pl.x, y, R * sx, R * sy, ang);
 }

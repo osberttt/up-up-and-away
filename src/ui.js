@@ -2,7 +2,7 @@ import * as C from './config.js';
 import { formatDay, parseDay, shiftDay } from './rng.js';
 import { doorHeight } from './tower.js';
 import { sfx, setMuted } from './audio.js';
-import { palette, drawHeart, inkHeart, tint, hex, HEART } from './draw.js';
+import { palette, drawHeart, inkHeart, tint, hex, HEART, STAR } from './draw.js';
 const BAR_W = 120;
 
 export function label(scene, x, y, text, size, alpha = 1, fixed = true) {
@@ -15,14 +15,14 @@ export function label(scene, x, y, text, size, alpha = 1, fixed = true) {
   return t;
 }
 
-// Hearts top-left, current height top-center with a thin bar filling toward the next
-// door (in that door's color), pause top-right. Best lives in the world as a dashed line.
+// Hearts top-left, the run's score top-center with a thin bar filling toward the run's next
+// door (in that door's color), pause top-right. Best height lives in the world as a dashed line.
 // Everything is drawn in the section's ink so it reads on any background.
 export class Hud {
   constructor(sc) {
     this.sc = sc;
     this.g = sc.add.graphics().setScrollFactor(0).setDepth(50);
-    this.height = label(sc, C.W / 2, 44, '0m', 34).setDepth(50);
+    this.scoreText = label(sc, C.W / 2, 44, '0', 34).setDepth(50);
     this.doorText = label(sc, C.W / 2 + BAR_W / 2 + 8, 78, '', 12, 0.75).setOrigin(0, 0.5).setDepth(50);
     // Right-aligned under the pause button.
     this.timer = label(sc, C.W - 34, 76, '0:00', 17, 0.75).setOrigin(1, 0.5).setDepth(50);
@@ -42,9 +42,27 @@ export class Hud {
   }
 
   update(dt) {
-    const { height, nextDoor, player, tower, col, runT } = this.sc;
+    const { height, runDoor: nextDoor, player, tower, col, runT, score } = this.sc;
     const ink = col.ink;
-    tint(this.height, ink).setText(`${Math.floor(height)}m`);
+    // The number counts up to the score and swells, gold, while it does.
+    const shown = this.shownScore ?? score;
+    const next = score > shown ? Math.min(score, shown + Math.max(1, Math.ceil((score - shown) * Math.min(1, dt * 8)))) : score;
+    if (next !== this.shownScore) {
+      this.shownScore = next;
+      this.scoreText.setText(`${next}`);
+    }
+    this.scorePunch = Math.max(0, (this.scorePunch || 0) - dt * 2.5);
+    const p = this.scorePunch;
+    this.scoreText.setScale(1 + 0.45 * p * p);
+    if (p > 0 && !this.gold) {
+      this.gold = true;
+      this.scoreText.setColor(hex(STAR)).setStroke(hex(ink), 6);
+      this.scoreText._tint = null; // so tint() recolors it afterwards
+    } else if (p === 0 && this.gold) {
+      this.gold = false;
+      this.scoreText.setStroke(hex(ink), 0);
+    }
+    if (!this.gold) tint(this.scoreText, ink);
     tint(this.doorText, ink);
 
     // Run time, under the hearts. Only re-set the text when the second changes.
@@ -58,7 +76,7 @@ export class Hud {
     if (nextDoor !== this.doorN) {
       this.doorN = nextDoor;
       this.doorColor = palette(tower, nextDoor).door;
-      this.doorText.setText(`${doorHeight(nextDoor)}`);
+      this.doorText.setText(`${doorHeight(nextDoor)}m`);
     }
     if (player.hp !== this.shownHp) {
       this.shownHp = player.hp;
@@ -77,8 +95,8 @@ export class Hud {
       }
     }
 
-    // Progress toward the next door, in that door's color.
-    const from = nextDoor > 1 ? doorHeight(nextDoor - 1) : 0;
+    // Progress toward the run's next door, in that door's color.
+    const from = doorHeight(nextDoor - 1);
     const k = Math.max(0, Math.min(1, (height - from) / (doorHeight(nextDoor) - from)));
     const x0 = C.W / 2 - BAR_W / 2;
     g.fillStyle(ink, 1).fillRoundedRect(x0 - 2, 74, BAR_W + 4, 8, 4);
@@ -88,6 +106,11 @@ export class Hud {
     g.fillStyle(ink, 0.8);
     g.fillRoundedRect(C.W - 54, 31, 7, 24, 2);
     g.fillRoundedRect(C.W - 41, 31, 7, 24, 2);
+  }
+
+  // A score gain makes the HUD number swell; bigger gains swell it more.
+  punch(pts) {
+    this.scorePunch = Math.min(1, Math.max(this.scorePunch || 0, 0.6 + pts / 400));
   }
 
   announce(text) {
@@ -167,7 +190,7 @@ export class Menu {
     const s = this.sc.save;
     this.stats.setText(
       [
-        `${formatDay(this.sc.day)}  ·  best ${Math.floor(s.best)}m`,
+        `${formatDay(this.sc.day)}  ·  best score ${s.score}  ·  highest ${Math.floor(s.best)}m`,
         `climbed ${Math.floor(s.climbed)}m  ·  falls ${s.falls}  ·  deaths ${s.deaths}`,
         `longest fall ${Math.floor(s.bigFall)}m  ·  streak ${s.streak}`,
       ].join('\n'),
@@ -178,13 +201,13 @@ export class Menu {
     this.drawChart();
   }
 
-  // Best height for each of the last 7 days, today on the right.
+  // Best score for each of the last 7 days, today on the right.
   drawChart() {
     const s = this.sc.save;
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const key = shiftDay(this.sc.day, -i);
-      days.push({ key, value: i === 0 ? s.best : s.history[key] || 0 });
+      days.push({ key, value: i === 0 ? s.score : s.scores[key] || 0 });
     }
     const max = Math.max(10, ...days.map((d) => d.value));
     const g = this.chart;
@@ -214,8 +237,9 @@ export class Menu {
   copy() {
     const s = this.sc.save;
     const text = [
-      `CHICKEN JUMPS · ${formatDay(this.sc.day)}`,
-      `▲ ${Math.floor(s.best)}m today`,
+      `UP UP AND AWAY ·${formatDay(this.sc.day)}`,
+      `★ ${s.score} points today`,
+      `▲ ${Math.floor(s.best)}m highest`,
       `${s.falls} falls · longest ${Math.floor(s.bigFall)}m`,
       `${s.streak} day streak`,
     ].join('\n');

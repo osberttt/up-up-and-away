@@ -6,7 +6,7 @@ Seeded randomness, hashing, smooth noise and date helpers. No Phaser, no DOM.
 
 | Export | What it does |
 |---|---|
-| `hashString(str)` | FNV-1a 32-bit hash. Turns `"chickenjumps:YYYY-MM-DD"` into the tower's seed. |
+| `hashString(str)` | FNV-1a 32-bit hash. Turns `"upupandaway:YYYY-MM-DD"` into the tower's seed. |
 | `hash01(n)` | Stateless hash of an integer to `[0, 1)`. For decoration that must look random but stay stable without using an RNG stream: background shapes, funnel specks. |
 | `Rng` | mulberry32 generator: `next()` → `[0, 1)`, `range(a, b)`, `chance(p)`. Small, fast and the same in every browser and Node. |
 | `noise1(seed, t)` | Smooth 1D gradient (Perlin-style) noise, roughly −1 to 1, with no pauses at the integer points. Hearts use it to drift on slow, curvy paths. |

@@ -11,7 +11,7 @@ const TARGET_M = 1600;
 const days = process.argv.slice(2).length ? process.argv.slice(2) : ['2026-10-07', '2026-10-08', '2026-12-25', '2027-01-01'];
 
 function collectMain(tower) {
-  const mains = [tower.platforms[0], ...tower.tutorial];
+  const mains = [tower.platforms[0]];
   const step = tower.step.bind(tower);
   tower.step = () => {
     step();
@@ -115,8 +115,9 @@ for (const day of days) {
   const types = {};
   for (const p of tower.platforms) types[p.type] = (types[p.type] || 0) + 1;
   types.hearts = tower.hearts.length;
-  types.stars = tower.stars.length;
   types.funnels = tower.funnels.length;
+  types.elevators = tower.elevators.length;
+  types.stars = tower.stars.length;
   types.portals = tower.portals.length;
   console.log(`${day}: deterministic=${deterministic} main=${mains.length - 1} types=${JSON.stringify(types)} hazards=${tower.hazards.length} reach=${JSON.stringify(reach)}`);
 }

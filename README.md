@@ -1,21 +1,26 @@
-# Chicken Jumps
+# Up Up and Away
 
 Endless vertical slingshot climber for mobile browsers, built with Phaser 3. Offline, single player, abstract shapes.
 
 - Drag anywhere and release to fling the blob; a longer drag gives more power. It bounces off the side walls.
-- Two flings: landing anywhere refills both; otherwise one refills every 3 seconds. Aiming mid-air slows time.
-- Hazards never kill: they stop you and drain your flings, so you fall. A miss can drop you a long way.
-- Doors at 100, 200, 350, 550, 800m…: once you pass one, you can't fall below it today.
-- No death, no end. Score is today's best height.
-- One tower per day for everyone (seeded by the local date). Your position is saved in the browser; the same day resumes where you left off, a new day starts a new tower from the bottom.
+- Unlimited flings, on the ground or in mid-air, with a 0.3 s cooldown between them. Aiming slows time.
+- 3 hearts. Spikes, saws and wall spikes cost a heart and lock flinging for 1 s, so you drop; losing the last heart ends the run and sends you back to 0m.
+- Platforms are solid on every side, except crumbling ones and doors, which are one-way.
+- Elements launch you: bouncy pads, funnels, portals and elevators (a U box you drop into; it carries you up and fires you out). While a launch is rising you're purple and see-through: hazards can't hurt you and platforms become one-way.
+- Stars are points: fly within the faint ring around one to collect it.
+- Floating hearts restore one heart each; they fade 10 s after coming on screen and respawn 12 s later.
+- Doors every 100m: passing one opens a floor you can't fall below today and refills all hearts.
+- Every platform type, hazard, funnel and portal can appear from the start; there is no height progression.
+- Score (per run, not height): bouncy pad +10, star +20, heart +25, funnel +50, elevator +60, portal +75 (each pad, star, funnel, elevator and portal once per run), and each 100m door +1500 minus 50 per second since the previous door (at least +100). Today's best run score is saved.
+- One tower per day for everyone (seeded by the local date); stats are saved in the browser.
 
 ## Run
 
 ```sh
 npm install
-npm run dev      # dev server, also reachable from a phone on the same network
+npm run dev      # dev server on port 5280, also reachable from a phone on the same network
 npm run build    # static build in dist/ (relative paths, works from any folder or itch.io)
-npm run preview  # serve the build
+npm run preview  # serve the build on port 4280
 npm run verify   # headless check that every generated tower is deterministic and climbable
 ```
 
