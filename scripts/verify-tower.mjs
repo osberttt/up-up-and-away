@@ -7,7 +7,7 @@ import { Tower } from '../src/tower.js';
 import { integrate, launchSpeed, substeps } from '../src/physics.js';
 
 const R = C.PLAYER_R;
-const TARGET_M = 800;
+const TARGET_M = Number(process.env.VERIFY_M) || 800; // VERIFY_M=2500 checks the whole climb (slow)
 const days = process.argv.slice(2).length ? process.argv.slice(2) : ['2026-10-07', '2026-10-08', '2026-12-25', '2027-01-01'];
 
 function collectMain(tower) {
@@ -28,11 +28,9 @@ function hitsHazard(b, hazards) {
       if (touching && b.y + R * 0.5 > hz.y0 && b.y - R * 0.5 < hz.y1) return true;
     } else {
       const rr = R + hz.r * 0.8;
-      // Saws count over their whole sweep, along their axis.
-      const ax = hz.axis === 'x' ? hz.amp : 0;
-      const ay = hz.axis === 'x' ? 0 : hz.amp;
-      const dx = Math.max(0, Math.abs(b.x - hz.x) - ax);
-      const dy = Math.max(0, Math.abs(b.y - hz.y) - ay);
+      // Moving spikes count over the whole box they move in.
+      const dx = Math.max(0, Math.abs(b.x - hz.x) - hz.ex);
+      const dy = Math.max(0, Math.abs(b.y - hz.y) - hz.ey);
       if (dx ** 2 + dy ** 2 < rr * rr) return true;
     }
   }
@@ -126,7 +124,7 @@ for (const day of days) {
   types.portals = tower.portals.length;
   const hz = {};
   for (const h of tower.hazards) {
-    const k = h.kind === 'saw' ? `saw${h.axis === 'x' ? 'X' : 'Y'}` : h.kind === 'spike' ? (h.r >= 26 ? 'big' : 'spike') : h.kind;
+    const k = h.kind === 'spike' ? h.type : h.kind;
     hz[k] = (hz[k] || 0) + 1;
   }
   console.log(`${day}: deterministic=${deterministic} main=${mains.length - 1} types=${JSON.stringify(types)} hazards=${tower.hazards.length} ${JSON.stringify(hz)} chains=${JSON.stringify(tower.chainStats)} reach=${JSON.stringify(reach)}`);

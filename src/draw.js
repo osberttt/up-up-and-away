@@ -1,6 +1,6 @@
 import * as C from './config.js';
 import { hash01 } from './rng.js';
-import { platformX, hazardPos, heartPos, doorHeight, elevatorOffset, railAt, bubblePos, kitePos, kiteTow, windGust } from './tower.js';
+import { platformX, hazardPos, hazardR, heartPos, doorHeight, elevatorOffset, railAt, bubblePos, kitePos, kiteTow, windGust } from './tower.js';
 import { sectionPalette, mixColor } from './palettes.js';
 
 const TAU = Math.PI * 2;
@@ -608,15 +608,26 @@ function drawHazard(sc, g, hz, col) {
     return;
   }
   const [x, y] = hazardPos(hz, t);
-  if (hz.kind === 'saw') {
-    // The track it swings along.
-    if (hz.axis === 'x') g.lineStyle(2, col.ink, 0.2).lineBetween(hz.x - hz.amp, hz.y, hz.x + hz.amp, hz.y);
-    else g.lineStyle(2, col.ink, 0.2).lineBetween(hz.x, hz.y - hz.amp, hz.x, hz.y + hz.amp);
-    inkStar(g, x, y, hz.r, 10, t * 6, 0.72, col.hazard, col.ink);
-  } else {
-    inkStar(g, x, y, hz.r, 7, t * 0.6, 0.5, col.hazard, col.ink);
-  }
-  g.fillStyle(col.ink, 1).fillCircle(x, y, hz.r * 0.26);
+  const r = hazardR(hz, t);
+  // Faint guides show where a spike will go: its track, its wavy path, its orbit, or (for one
+  // that grows) its full size.
+  const guide = () => g.lineStyle(2, col.ink, 0.2);
+  if (hz.move === 'swing' || hz.move === 'patrol') guide().lineBetween(hz.x - hz.dx, hz.y - hz.dy, hz.x + hz.dx, hz.y + hz.dy);
+  else if (hz.move === 'wave') {
+    const pts = [];
+    for (let i = 0; i <= 20; i++) {
+      const a = -Math.PI / 2 + (Math.PI * i) / 20;
+      pts.push({ x: hz.x + hz.ex * Math.sin(a), y: hz.y + hz.ey * Math.sin(3 * a) });
+    }
+    guide().strokePoints(pts, false);
+  } else if (hz.move === 'orbit' && !hz.copy) {
+    guide().strokeCircle(hz.x, hz.y, hz.orbit);
+    g.fillStyle(col.ink, 0.5).fillCircle(hz.x, hz.y, 5);
+  } else if (hz.pulse) guide().strokeCircle(hz.x, hz.y, hz.r);
+  // Moving spikes spin fast like saws; still ones turn slowly.
+  if (hz.move) inkStar(g, x, y, r, 10, t * 6, 0.72, col.hazard, col.ink);
+  else inkStar(g, x, y, r, 7, t * 0.6, 0.5, col.hazard, col.ink);
+  g.fillStyle(col.ink, 1).fillCircle(x, y, r * 0.26);
 }
 
 // Funnel: one shape. A cone with its mouth facing down narrows into a tube that rises, open

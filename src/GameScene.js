@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import * as C from './config.js';
-import { Tower, platformX, hazardPos, heartPos, doorHeight, nextDoorIndex, elevatorOffset, elevatorIdle, railAt, bubblePos, kitePos, kiteTow, windGust, kiteShot, cometShot } from './tower.js';
+import { Tower, platformX, hazardPos, hazardR, heartPos, doorHeight, nextDoorIndex, elevatorOffset, elevatorIdle, railAt, bubblePos, kitePos, kiteTow, windGust, kiteShot, cometShot } from './tower.js';
 import { integrate, substeps, launchSpeed, previewPath, MIN_X, MAX_X } from './physics.js';
 import { dayKey } from './rng.js';
 import * as Save from './save.js';
@@ -13,19 +13,35 @@ const STEP = 1 / 120;
 const CAM_EASE = 5; // per second: how fast the camera catches up with its target
 const clamp = Phaser.Math.Clamp;
 
+// Chance a heart shows, for the hearts you have: HEART_SHOW's points, blended in between.
+function heartShowChance(hp) {
+  const pts = C.HEART_SHOW;
+  if (hp <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    const [h0, c0] = pts[i - 1];
+    const [h1, c1] = pts[i];
+    if (hp <= h1) return c0 + ((c1 - c0) * (hp - h0)) / (h1 - h0);
+  }
+  return pts[pts.length - 1][1];
+}
+
 export class GameScene extends Phaser.Scene {
   constructor() {
     super('game');
   }
 
-  create() {
+  // data.again: restarted after a death (a new run, on a new tower).
+  create(data = {}) {
     this.day = dayKey();
     this.save = Save.load(this.day);
     setMuted(this.save.muted);
-    // Dev only: ?force=kite makes every chain element a kite (any element type works).
-    const force = import.meta.env?.DEV ? new URLSearchParams(location.search).get('force') : null;
-    this.tower = new Tower(this.day, { force });
+    // Every run climbs a new random tower. Dev only: ?seed=abc rebuilds the same tower each time,
+    // and ?force=kite makes every chain element a kite (any element type works).
+    const params = import.meta.env?.DEV ? new URLSearchParams(location.search) : new URLSearchParams();
+    const seed = params.get('seed') || Math.random().toString(36).slice(2, 10);
+    this.tower = new Tower(seed, { force: params.get('force') });
 
+    this.leaving = false; // restarting for a new run (see respawn)
     this.simT = 0;
     this.runT = 0; // seconds of real time in this run, reset by a death
     this.acc = 0;
@@ -73,7 +89,7 @@ export class GameScene extends Phaser.Scene {
       squash: 0,
       fromY: -R, // where the current flight started, to measure falls
     };
-    if (import.meta.env?.DEV) this.devStart();
+    if (import.meta.env?.DEV && !data.again) this.devStart();
     this.height = this.heightOf(this.player.y);
     this.nextDoor = nextDoorIndex(this.save.best);
     this.newRun();
@@ -96,7 +112,14 @@ export class GameScene extends Phaser.Scene {
     this.setupInput();
     this.setupLifecycle();
     this.setupMap();
-    if (import.meta.env?.DEV) this.devShot();
+    if (import.meta.env?.DEV && !data.again) this.devShot();
+    if (data.again) {
+      const pl = this.player;
+      pl.hitT = C.HIT_COOLDOWN;
+      this.hud.announce('BACK TO 0m');
+      sfx.respawn();
+      this.burst(pl.x, pl.y, this.col.spark, 10, 200);
+    }
   }
 
   // Dev only, for screenshots (scripts/screenshots.mjs): ?shot=aim holds a drag (the aim arrow and
@@ -983,33 +1006,37 @@ export class GameScene extends Phaser.Scene {
     this.burst(pl.x, pl.y, portalColor(w.to, this.col), 10, 200);
   }
 
-  // Hearts start a HEART_LIFE countdown the first time they are on screen, then vanish.
-  // A taken or faded heart comes back HEART_RESPAWN later, so hearts never run out.
-  // At full HP you pass through them; they stay for when you need them.
+  // A heart spot coming on screen shows a heart by chance, likelier the fewer hearts you have
+  // (HEART_SHOW); if not, it tries again HEART_REROLL later. A shown heart starts a HEART_LIFE
+  // countdown, then vanishes. A taken or faded heart comes back HEART_RESPAWN later.
+  // At full HP you pass through them.
   updateHearts() {
     const pl = this.player;
     const top = this.cameras.main.scrollY;
     const rr = (C.PLAYER_R + 16) ** 2;
     const full = pl.hp >= C.MAX_HP;
+    const gone = (ht, wait) => Object.assign(ht, { gone: true, goneT: this.simT, wait });
     for (const ht of this.tower.heartsIn(top - 60, top + C.H + 60, this.nearHearts)) {
       if (ht.gone) {
-        if (this.simT - ht.goneT < C.HEART_RESPAWN) continue;
+        if (this.simT - ht.goneT < ht.wait) continue;
         ht.gone = false;
         ht.seenT = null;
       }
       const [x, y] = heartPos(ht, this.simT);
       if (ht.seenT == null) {
         if (y < top || y > top + C.H) continue;
+        if (Math.random() > heartShowChance(pl.hp + this.heartsFlying)) {
+          gone(ht, C.HEART_REROLL);
+          continue;
+        }
         ht.seenT = this.simT;
       }
       if (this.simT - ht.seenT > C.HEART_LIFE) {
-        ht.gone = true;
-        ht.goneT = this.simT;
+        gone(ht, C.HEART_RESPAWN);
         sfx.heartGone();
         this.burst(x, y, this.col.heart, 6, 90);
       } else if (!full && (pl.x - x) ** 2 + (pl.y - y) ** 2 < rr) {
-        ht.gone = true;
-        ht.goneT = this.simT;
+        gone(ht, C.HEART_RESPAWN);
         pl.hp++;
         this.elementScore(x, y);
         this.dirty = true;
@@ -1086,7 +1113,7 @@ export class GameScene extends Phaser.Scene {
         if (touching && pl.y + R * 0.5 > hz.y0 && pl.y - R * 0.5 < hz.y1) return this.hit();
       } else {
         const [hx, hy] = hazardPos(hz, this.simT);
-        const rr = R + hz.r * 0.8;
+        const rr = R + hazardR(hz, this.simT) * 0.8;
         if ((pl.x - hx) ** 2 + (pl.y - hy) ** 2 < rr * rr) return this.hit();
       }
     }
@@ -1127,20 +1154,11 @@ export class GameScene extends Phaser.Scene {
     this.persist();
   }
 
+  // A death starts a new run, on a new random tower, back at 0m (the run was saved in die).
   respawn() {
-    const pl = this.player;
-    const p = this.tower.platforms[0];
-    Object.assign(pl, { dead: 0, hp: C.MAX_HP, ground: p, offset: 0, vx: 0, vy: 0, jumpCd: 0, hitT: C.HIT_COOLDOWN, launched: false, elevator: null, carry: null, kite: null });
-    pl.x = C.W / 2;
-    pl.y = pl.fromY = p.y - C.PLAYER_R;
-    this.runT = 0; // a death starts a new run
-    this.height = 0;
-    this.newRun();
-    this.setPalette(0);
-    this.cameras.main.scrollY = this.cameraTarget();
-    this.hud.announce('BACK TO 0m');
-    sfx.respawn();
-    this.burst(pl.x, pl.y, this.col.spark, 10, 200);
+    if (this.leaving) return;
+    this.leaving = true;
+    this.scene.restart({ again: true });
   }
 
   heightOf(y) {

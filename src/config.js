@@ -120,7 +120,7 @@ export const FIELD_R = 56;
 export const COMET_TRAP = 0.3;
 export const COMET_R = 18;
 export const COMET_ANGLE = (80 * Math.PI) / 180;
-export const COMET_HIT = 4000;
+export const COMET_HIT = 3800;
 export const COMET_COOLDOWN = 1.5;
 
 // Wind gust (an updraft): a column of wind blowing up. However you enter it (any direction, any
@@ -154,23 +154,23 @@ export const RAIL_COOLDOWN = 1.5;
 // weight when it unlocks and halves every ELEMENT_FADE m after, down to ELEMENT_MIN_WEIGHT, so the
 // newest elements dominate each stage and old ones only turn up now and then. The type just used
 // counts ELEMENT_REPEAT as much, so the same one rarely comes twice in a row.
-export const ELEMENT_FADE = 300;
-export const ELEMENT_MIN_WEIGHT = 0.1;
+export const ELEMENT_FADE = 180;
+export const ELEMENT_MIN_WEIGHT = 0.03;
 export const ELEMENT_REPEAT = 0.3;
 // Progression: the height (m) where each element starts appearing. Below the first one there are
 // only stars and spikes (and platforms); no chains start until something is unlocked.
 export const ELEMENT_FROM = {
-  balloon: 100, // touch it, float up: can't really miss
-  bubble: 200, // drifting; catch it, popping early is optional
-  bouncy: 300, // spring: land on it from above
-  kite: 500, // flying; grab the tail, shot at 75°
+  balloon: 0, // touch it, float up: can't really miss
+  bouncy: 100, // spring: land on it from above
+  wind: 200, // updraft columns (not chain elements)
+  kite: 300, // flying; grab the tail, shot at 75°
+  bubble: 500, // drifting; catch it, popping early is optional
   funnel: 600, // jump up into its mouth
-  rail: 800, // latch on, flung sideways off the end
-  elevator: 1000, // drop into a solid U: the biggest launch
+  planet: 800, // circle it, tap to fling: timing
+  elevator: 1000, // drop into a solid U: a big launch
   portal: 1300, // reappear somewhere else, read the new screen
-  wind: 1500, // updraft columns (not chain elements)
-  planet: 1700, // circle it, tap to fling: timing
-  comet: 2000, // electric field: trapped, then blasted off
+  rail: 1500, // latch on, flung sideways off the end
+  comet: 2000, // electric field: trapped, then blasted off (the biggest launch)
 };
 // The climb ends here. Past it is space: a black level with stars and nothing else. Reaching it,
 // gravity turns off, control stops, and your speed eases (END_EASE per second) to straight up at
@@ -182,8 +182,8 @@ export const END_TITLE = 2; // seconds of rising before the title drops in
 export const END_BUTTON = 1; // seconds after the title before PLAY AGAIN appears
 // Higher up, elements are stronger, so there are fewer of them: chains get shorter and the breaks
 // between them longer, from the first range at the ground to the second at END_HEIGHT.
-export const CHAIN_LENGTH = [[3, 6], [2, 3]]; // elements per chain
-export const CHAIN_BREAK = [[2, 4], [5, 8]]; // path steps between chains
+export const CHAIN_LENGTH = [[3, 6], [1, 2]]; // elements per chain
+export const CHAIN_BREAK = [[2, 4], [8, 12]]; // path steps between chains
 export const CHAIN_DX = [60, 170]; // px sideways from the peak to the next element
 // px above the peak of the previous launch, to the part of the next element you aim for.
 export const CHAIN_DY = {
@@ -212,7 +212,17 @@ export const STAR_CHANCE = 0.55;
 export const MAX_HP = 5;
 export const HEART_LIFE = 10; // seconds a heart lasts once it is on screen
 export const HEART_RESPAWN = 12; // seconds after a heart is taken or fades until it comes back
-export const HEART_CHANCE = 0.3; // chance of a heart per main platform
+// Chance of a heart spot per main platform: from the first value at the ground to the second at
+// END_HEIGHT (more hearts higher up, where the spikes are).
+export const HEART_CHANCE = [0.15, 0.45];
+// Whether a heart spot shows when it comes on screen depends on the hearts you have: [hearts,
+// chance] points, in between is a blend. Low on hearts, they show up; full, they rarely do.
+export const HEART_SHOW = [
+  [1, 1],
+  [3, 0.5],
+  [5, 0.1],
+];
+export const HEART_REROLL = 4; // seconds before a heart spot that didn't show tries again
 export const DOOR_EVERY = 100; // m between doors; passing one gives back one heart (it flies up to the bar)
 export const RESPAWN_DELAY = 0.9;
 
@@ -222,7 +232,13 @@ export const RESPAWN_DELAY = 0.9;
 //   spike: one small ball      big: one large ball     saw: moves up and down
 //   sawX: moves side to side   pair: a gate, one each side of the route
 //   row: three small in a diagonal line                 wall: teeth on a wall    none: a breather
-export const SPIKE_BAG = ['spike', 'spike', 'big', 'saw', 'sawX', 'pair', 'row', 'wall', 'none', 'none', 'none', 'none', 'none'];
+//   patrol: slides back and forth at a steady speed     pulse: grows and shrinks
+//   orbit: two or three small spikes circling a point   wave: drifts across, bobbing up and down
+export const SPIKE_BAG = ['spike', 'spike', 'big', 'saw', 'sawX', 'pair', 'row', 'wall', 'patrol', 'pulse', 'orbit', 'wave', 'none', 'none', 'none', 'none', 'none'];
+// Progression: the height (m) where each pattern starts turning up (the rest are there from 0m).
+export const SPIKE_FROM = { saw: 150, sawX: 250, patrol: 400, pulse: 700, orbit: 1100, wave: 1600 };
+export const PULSE_MIN = 0.3; // a pulsing spike shrinks to this much of its full size
+export const ORBIT_THREE = 1800; // m from where orbits have three spikes instead of two
 // Spikes get harder as you climb: each of these goes from its first value at the ground to its
 // second at END_HEIGHT, along a curve (height fraction ^ SPIKE_CURVE): gentle early, steep late.
 export const SPIKE_CURVE = 1.4;

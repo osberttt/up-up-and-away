@@ -22,11 +22,36 @@ export function platformX(p, t) {
   return p.amp ? p.x + p.amp * Math.sin(t * p.speed + p.phase) : p.x;
 }
 
-// Saws swing along their axis ('y' up and down, 'x' side to side).
+// Where a spike is at time t. hz.move is how it moves around its spot (x, y):
+//   swing: eases back and forth along (dx, dy)      patrol: back and forth along (dx, dy) at a steady speed
+//   wave: across by ex, bobbing up and down by ey     orbit: circles (x, y) at radius `orbit`
+// and no move: it stays put. hz.ex and hz.ey are how far it gets from its spot each way.
 export function hazardPos(hz, t) {
-  if (!hz.amp) return [hz.x, hz.y];
-  const s = hz.amp * Math.sin(t * hz.speed + hz.phase);
-  return hz.axis === 'x' ? [hz.x + s, hz.y] : [hz.x, hz.y + s];
+  const a = t * hz.speed + hz.phase;
+  switch (hz.move) {
+    case 'swing': {
+      const s = Math.sin(a);
+      return [hz.x + hz.dx * s, hz.y + hz.dy * s];
+    }
+    case 'patrol': {
+      const s = (2 / Math.PI) * Math.asin(Math.sin(a)); // a triangle wave: steady speed, sharp turns
+      return [hz.x + hz.dx * s, hz.y + hz.dy * s];
+    }
+    case 'wave':
+      return [hz.x + hz.ex * Math.sin(a), hz.y + hz.ey * Math.sin(3 * a)];
+    case 'orbit':
+      return [hz.x + hz.orbit * Math.cos(a), hz.y + hz.orbit * Math.sin(a)];
+    default:
+      return [hz.x, hz.y];
+  }
+}
+
+// A spike's radius at time t: pulsing spikes grow and shrink between PULSE_MIN of their size and
+// all of it; the rest keep theirs.
+export function hazardR(hz, t) {
+  if (!hz.pulse) return hz.r;
+  const k = 0.5 + 0.5 * Math.sin(t * hz.pulse + hz.phase);
+  return hz.r * (C.PULSE_MIN + (1 - C.PULSE_MIN) * k);
 }
 
 // Path [x0, y0, x1, y1] through a funnel's tube. The funnel's mouth is at y and faces down;
@@ -199,18 +224,18 @@ class Bag {
   }
 }
 
-// The day's tower. Generation is sequential from the date seed, so every player gets the
-// same platforms and a reload rebuilds the exact tower (platform ids stay stable for saves).
+// A tower, built from a seed key: every run gets a new random key (see GameScene). Generation
+// is sequential from the seed, so the same key always rebuilds the exact same tower.
 //
 // Path-first: a route of points goes up the tower, each inside the reach of a launch from the
 // previous one; some become platforms. Spikes keep out of a corridor along that route.
 // Elements come in planned chains: each is placed where the previous one's launch peaks.
 export class Tower {
   // force (testing only): every chain element is this type, at any height.
-  constructor(day, { force = null } = {}) {
-    this.day = day;
+  constructor(key, { force = null } = {}) {
+    this.key = key;
     this.force = force;
-    this.seed = hashString(`upupandaway:${day}`);
+    this.seed = hashString(`upupandaway:${key}`);
     this.rng = new Rng(this.seed);
     this.hue = this.rng.next();
     this.platforms = [];
@@ -271,10 +296,7 @@ export class Tower {
   addHazard(hz) {
     this.hazards.push(hz);
     if (hz.kind === 'wall') this.hazGrid.add(hz, hz.y0, hz.y1);
-    else {
-      const ampY = hz.axis === 'x' ? 0 : hz.amp;
-      this.hazGrid.add(hz, hz.y - hz.r - ampY, hz.y + hz.r + ampY);
-    }
+    else this.hazGrid.add(hz, hz.y - hz.r - hz.ey, hz.y + hz.r + hz.ey);
   }
 
   addZone(kind, x0, y0, x1, y1) {
@@ -742,11 +764,14 @@ export class Tower {
     const r = this.rng;
     const d = this.spikeLevel(to.y);
     const at = (range) => lerp(range[0], range[1], d);
-    let pattern = this.spikeBag.next();
-    if (pattern === 'none' && r.chance(at(C.SPIKE_FILL))) pattern = this.spikeBag.next((p) => p !== 'none');
+    const m = -to.y / C.PX_PER_M;
+    const open = (p) => p === 'none' || m >= (C.SPIKE_FROM[p] ?? 0);
+    const some = (p) => p !== 'none' && open(p);
+    let pattern = this.spikeBag.next(open);
+    if (pattern === 'none' && r.chance(at(C.SPIKE_FILL))) pattern = this.spikeBag.next(some);
     if (r.chance(at(C.SPIKE_SKIP))) pattern = 'none';
     this.placePattern(from, to, pattern);
-    if (r.chance(at(C.SPIKE_DOUBLE))) this.placePattern(from, to, this.spikeBag.next((p) => p !== 'none'));
+    if (r.chance(at(C.SPIKE_DOUBLE))) this.placePattern(from, to, this.spikeBag.next(some));
     if (r.chance(at(C.SPIKE_EXTRA))) this.addSpike(from, to, { rad: [14, 24] });
   }
 
@@ -762,14 +787,54 @@ export class Tower {
         this.addSpike(from, to, { rad: [14, 22] });
         break;
       case 'big':
-        this.addSpike(from, to, { rad: [26, 34] });
+        this.addSpike(from, to, { type: 'big', rad: [26, 34] });
         break;
-      case 'saw':
-        this.addSpike(from, to, { rad: [16, 24], amp: [40, 90], axis: 'y' });
+      case 'saw': {
+        const move = () => {
+          const amp = r.range(40, 90);
+          return { move: 'swing', dx: 0, dy: amp, ex: 0, ey: amp };
+        };
+        this.addSpike(from, to, { type: 'saw', rad: [16, 24], move });
         break;
-      case 'sawX':
-        this.addSpike(from, to, { rad: [16, 22], amp: [40, 80], axis: 'x' });
+      }
+      case 'sawX': {
+        const move = () => {
+          const amp = r.range(40, 80);
+          return { move: 'swing', dx: amp, dy: 0, ex: amp, ey: 0 };
+        };
+        this.addSpike(from, to, { type: 'sawX', rad: [16, 22], move });
         break;
+      }
+      case 'patrol': {
+        // A longer run than a saw's, at a steady speed: across or up and down, a little slanted.
+        const move = () => {
+          const len = r.range(60, 110);
+          const tilt = len * r.range(-0.4, 0.4);
+          const [dx, dy] = r.chance(0.5) ? [len, tilt] : [tilt, len];
+          return { move: 'patrol', dx, dy, ex: Math.abs(dx), ey: Math.abs(dy), speedMul: 0.8 };
+        };
+        this.addSpike(from, to, { type: 'patrol', rad: [15, 20], move });
+        break;
+      }
+      case 'pulse':
+        this.addSpike(from, to, { type: 'pulse', rad: [24, 32], move: () => ({ pulse: TAU / r.range(1.4, 2.4) }) });
+        break;
+      case 'orbit': {
+        // Small spikes circling an empty middle, evenly spaced.
+        const move = () => {
+          const orbit = r.range(42, 60);
+          return { move: 'orbit', orbit, ex: orbit, ey: orbit, speedMul: r.chance(0.5) ? 1 : -1 };
+        };
+        const hz = this.addSpike(from, to, { type: 'orbit', rad: [11, 14], move });
+        const n = -to.y / C.PX_PER_M >= C.ORBIT_THREE ? 3 : 2;
+        for (let k = 1; hz && k < n; k++) this.addHazard({ ...hz, phase: hz.phase + (TAU * k) / n, copy: true });
+        break;
+      }
+      case 'wave': {
+        const move = () => ({ move: 'wave', ex: r.range(45, 80), ey: r.range(18, 30), speedMul: 0.7 });
+        this.addSpike(from, to, { type: 'wave', rad: [14, 20], move });
+        break;
+      }
       case 'pair': {
         // A gate: one spike each side of the route, at the same height.
         const y = lerp(from.y, to.y, r.range(0.3, 0.7));
@@ -803,29 +868,32 @@ export class Tower {
     return lerp(from.x, to.x, clamp((from.y - y) / (from.y - to.y), 0, 1));
   }
 
-  // A spiky ball (or saw) anywhere across the width, or at `at`, except in a corridor
-  // (SPIKE_CORRIDOR each side) along the route line, so the route always has a gap through.
-  // Also kept off platforms, doors, portals, elements and chain hops.
-  addSpike(from, to, { rad: radR = [16, 26], amp: ampR = null, axis = 'y', at = null } = {}) {
+  // A spiky ball anywhere across the width, or at `at`, except in a corridor (SPIKE_CORRIDOR
+  // each side) along the route line, so the route always has a gap through. Also kept off
+  // platforms, doors, portals, elements and chain hops. `move()` gives a moving one its motion
+  // (see hazardPos), with ex/ey, how far it gets from its spot; everything is kept clear of the
+  // whole box it moves in. `type` is the pattern, for stats.
+  addSpike(from, to, { type = 'spike', rad: radR = [16, 26], move = null, at = null } = {}) {
     const r = this.rng;
     for (let i = 0; i < (at ? 1 : 8); i++) {
       const rad = r.range(...radR);
-      const amp = ampR ? r.range(...ampR) : 0;
-      const ax = axis === 'x' ? amp : 0;
-      const ay = axis === 'x' ? 0 : amp;
-      const x = at ? at.x : r.range(C.WALL + rad + ax + 8, C.W - C.WALL - rad - ax - 8);
-      const yMin = to.y + rad + ay + 20;
-      const yMax = from.y - rad - ay - 40;
+      const m = move ? move() : {};
+      const ex = m.ex ?? 0;
+      const ey = m.ey ?? 0;
+      const x = at ? at.x : r.range(C.WALL + rad + ex + 8, C.W - C.WALL - rad - ex - 8);
+      const yMin = to.y + rad + ey + 20;
+      const yMax = from.y - rad - ey - 40;
       if (yMax <= yMin) return null;
       const y = at ? at.y : r.range(yMin, yMax);
-      if (x - rad - ax < C.WALL + 4 || x + rad + ax > C.W - C.WALL - 4 || y < yMin || y > yMax) continue;
-      // Distance to the route over the whole sweep.
-      const near = Math.min(...[-1, 0, 1].map((k) => Math.abs(x + k * ax - this.pathX(from, to, y + k * ay))));
+      if (x - rad - ex < C.WALL + 4 || x + rad + ex > C.W - C.WALL - 4 || y < yMin || y > yMax) continue;
+      // Distance from the route to the box it moves in.
+      const near = Math.min(...[-1, 0, 1].map((k) => Math.max(0, Math.abs(x - this.pathX(from, to, y + k * ey)) - ex)));
       if (near < C.SPIKE_CORRIDOR + rad) continue;
-      if (this.platformNear(x, y, rad + ax + 30, rad + ay + 60)) continue;
-      if (this.doorNear(y, rad + ay + 70) !== null) continue;
-      if (this.inZone(x, y, rad + Math.max(ax, ay) + 20, 'any') || this.portalNear(x, y, rad + Math.max(ax, ay) + 70)) continue;
-      const hz = { kind: amp ? 'saw' : 'spike', x, y, r: rad, amp, axis, speed: (TAU / r.range(2, 3.5)) * lerp(C.SAW_SPEED[0], C.SAW_SPEED[1], this.spikeLevel(y)), phase: r.range(0, TAU) };
+      if (this.platformNear(x, y, rad + ex + 30, rad + ey + 60)) continue;
+      if (this.doorNear(y, rad + ey + 70) !== null) continue;
+      if (this.inZone(x, y, rad + Math.max(ex, ey) + 20, 'any') || this.portalNear(x, y, rad + Math.max(ex, ey) + 70)) continue;
+      const speed = (TAU / r.range(2, 3.5)) * lerp(C.SAW_SPEED[0], C.SAW_SPEED[1], this.spikeLevel(y)) * (m.speedMul ?? 1);
+      const hz = { kind: 'spike', type, x, y, r: rad, move: null, ...m, ex, ey, speed, phase: r.range(0, TAU) };
       this.addHazard(hz);
       return hz;
     }
@@ -866,15 +934,17 @@ export class Tower {
     }
   }
 
-  // Runtime state: seenT starts the HEART_LIFE countdown, goneT the HEART_RESPAWN one.
+  // A heart spot, likelier higher up (HEART_CHANCE). Runtime state: seenT starts the HEART_LIFE
+  // countdown, goneT the wait (`wait` seconds) before it can show again (see GameScene.updateHearts).
   addHeart(from, to) {
     const r = this.itemRng;
     const roll = r.next();
     const x = r.range(C.WALL + 60, C.W - C.WALL - 60);
     const y = lerp(from.y, to.y, r.range(0.3, 0.8));
     const seed = Math.floor(r.range(0, 1e6));
-    if (roll > C.HEART_CHANCE || this.atStart(y + 60) || this.hazardNear(x, y, 110, 90) || this.inZone(x, y, 60, 'element') || this.portalNear(x, y, 80)) return;
-    const ht = { x, y, seed, seenT: null, gone: false, goneT: 0 };
+    const chance = lerp(C.HEART_CHANCE[0], C.HEART_CHANCE[1], clamp(-y / C.PX_PER_M / C.END_HEIGHT, 0, 1));
+    if (roll > chance || this.atStart(y + 60) || this.hazardNear(x, y, 110, 90) || this.inZone(x, y, 60, 'element') || this.portalNear(x, y, 80)) return;
+    const ht = { x, y, seed, seenT: null, gone: false, goneT: 0, wait: 0 };
     this.hearts.push(ht);
     this.heartGrid.add(ht, y - 60, y + 60);
   }
@@ -973,9 +1043,7 @@ export class Tower {
   hazardNear(x, y, padX, padY) {
     for (const hz of this.hazardsIn(y - padY - 120, y + padY + 120, this.scratch)) {
       if (hz.kind === 'wall') continue;
-      const ax = hz.axis === 'x' ? hz.amp : 0;
-      const ay = hz.axis === 'x' ? 0 : hz.amp;
-      if (Math.abs(hz.y - y) < padY + hz.r + ay && Math.abs(hz.x - x) < padX + hz.r + ax) return true;
+      if (Math.abs(hz.y - y) < padY + hz.r + hz.ey && Math.abs(hz.x - x) < padX + hz.r + hz.ex) return true;
     }
     return false;
   }

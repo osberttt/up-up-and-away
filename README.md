@@ -1,12 +1,12 @@
-﻿# Up Up and Away
+# Up Up and Away
 
-**Digit7 Jam 2026 submission** Â· version **1.0.0** Â· submission tag `v1.0.0`
+**Digit7 Jam 2026 submission** · version **1.0.0** · submission tag `v1.0.0`
 
 | | |
 |---|---|
 | Game title | Up Up and Away |
-| Developer | Osbert (solo) |
-| Main contact | Osbert Â· minhtetnaing25mhn@gmail.com Â· Telegram @minhtetnaing111 |
+| Developer | Min Htet Naing (Osbert), solo |
+| Main contact | Min Htet Naing (Osbert) · minhtetnaing25mhn@gmail.com · Telegram @minhtetnaing111 |
 | Genre | Arcade vertical climber (one-touch slingshot) |
 | Engine | Phaser 3.90 (JavaScript), built with Vite |
 | Playable link | [[DIGIT7S HOSTING URL]] |
@@ -15,7 +15,7 @@
 
 Up Up and Away is a one-finger arcade climber about going up, then up, then *woooo*. Drag anywhere and release to fling a small ball upward like a slingshot. Hop between springs, balloons, kites, portals, planets and more that launch you higher, and chain them into combos. Avoid the spikes, climb through 25 doors and a hand-picked colour journey from soft pastel mornings to the night sky, and at 2500 m float off into space.
 
-Everyone gets the same tower each day, and today's best score and streak are kept on the device.
+Every run climbs a new random tower. Today's best score, the last 7 runs and the day streak are kept on the device.
 
 ## 2. How to open and play
 
@@ -45,21 +45,21 @@ Everyone gets the same tower each day, and today's best score and streak are kep
 | From | Element | How it works |
 |---|---|---|
 | 0 m | Stars, spikes | Stars are points (fly through the faint ring). Spikes hurt. |
-| 100 m | Balloon | Touch it or its string: float up, then a small push. |
-| 200 m | Bubble | Drifts side to side. It swallows you and rises; tap to pop early. |
-| 300 m | Spring | Land on it from above to bounce up. |
-| 500 m | Kite | Touch it and it takes off with you under it. |
+| 0 m | Balloon | Touch it or its string: float up, then a small push. |
+| 100 m | Spring | Land on it from above to bounce up. |
+| 200 m | Updraft | A wind column that carries you straight up. |
+| 300 m | Kite | Touch it and it takes off with you under it. |
+| 500 m | Bubble | Drifts side to side. It swallows you and rises; tap to pop early. |
 | 600 m | Funnel | Jump up into its mouth; it fires you up out of its tube. |
-| 800 m | Rail | Touch the track, slide the ramp, get flung off the end. |
+| 800 m | Planet | Its ring catches you and you circle it; tap to fling off. |
 | 1000 m | Elevator | Drop into the U: it surges up and kicks you out. |
 | 1300 m | Portal | Fly into the swirl, come out of the burst higher up. |
-| 1500 m | Updraft | A wind column that carries you straight up. |
-| 1700 m | Planet | Its ring catches you and you circle it; tap to fling off. |
+| 1500 m | Rail | Touch the track, slide the ramp, get flung off the end. |
 | 2000 m | Comet | An electric field traps you for a moment, then a comet blasts you up. |
 
-Spikes grow denser and saws faster toward the top.
+Higher up, elements are stronger and fewer, and older ones turn up less. Spikes grow denser and faster toward the top, and new kinds join as you climb: swinging saws (150 m, 250 m), patrolling spikes (400 m), pulsing spikes that grow and shrink (700 m), orbits of spikes circling a point (1100 m) and wavy spikes (1600 m). A faint line shows where each moving spike goes.
 
-**Score.** Each element is worth +50, hit within 2.5 s of each other for a chain (NICE â†’ GOOD â†’ GREAT â†’ AMAZING â†’ FANTASTIC). Doors score by speed since the previous door: under 14 s is +300, down to +25 for slow climbs. Height alone scores nothing. Today's best run score is saved.
+**Score.** Each element is worth +50, hit within 2.5 s of each other for a chain (NICE → GOOD → GREAT → AMAZING → FANTASTIC). Doors score by speed since the previous door: under 14 s is +300, down to +25 for slow climbs. Height alone scores nothing. Today's best run score is saved.
 
 ## 4. Supported browsers
 
@@ -76,8 +76,8 @@ Tested on: iPhone 12 Pro (iOS), plus a desktop browser during development.
 
 - **Recommended orientation:** portrait.
 - **Playfield:** 540 units wide; its height adapts to the screen (900 to 1200 units), so tall phones are filled edge to edge.
-- **Mobile:** works at 360 Ã— 640 and up. Recommended aspect ratio 9:16 to 9:21.
-- **Desktop:** works at 1280 Ã— 720 and up. On a landscape screen the game is shown as a centred portrait column, with side bars filled in the current palette colour.
+- **Mobile:** works at 360 × 640 and up. Recommended aspect ratio 9:16 to 9:21.
+- **Desktop:** works at 1280 × 720 and up. On a landscape screen the game is shown as a centred portrait column, with side bars filled in the current palette colour.
 - Text, buttons and the score are scaled with the playfield and stay readable without zooming. No horizontal scrolling. Rendering is sharp on high-DPI screens.
 
 ## 7. Internet, APIs and third-party services
@@ -99,11 +99,12 @@ Tested on: iPhone 12 Pro (iOS), plus a desktop browser during development.
 - **Quick look at later content:** the full climb takes a while. To see late elements and the ending quickly, build from source and run `npm run dev`, then open:
   - `http://localhost:5280/?at=1500` to start at 1500 m (any height works);
   - `http://localhost:5280/?at=2400&force=kite` to start at 2400 m with every chain element forced to one type;
+  - `http://localhost:5280/?seed=abc` to play the same tower every time (any word works);
   - in dev mode, press **M** to open a scrollable map of the tower and **T** to teleport there.
 
   These test options exist **only** in the development server, not in the released build.
 - **A fresh start:** the pause menu has **RESTART TOWER** (tap twice). Clearing the site's storage resets everything.
-- **The same tower:** the tower is generated from the date, so every tester on the same day plays the same climb.
+- **A new tower each run:** every run (each page load, death or PLAY AGAIN) generates a new random tower, so two testers will not see the same climb.
 
 ## 10. Third-party tools and libraries
 
@@ -145,7 +146,7 @@ npm install        # once
 npm run dev        # dev server at http://localhost:5280 (also reachable from a phone on the same network)
 npm run build      # production build into dist/ (relative paths: works from any folder or host)
 npm run preview    # serve the production build at http://localhost:4280
-npm run verify     # headless check: each day's tower is deterministic and its route is climbable
+npm run verify     # headless check: towers are deterministic per seed and their route is climbable
 npm run package -- TeamName   # verify + build, then write the submission ZIP and README copy to submission/out/
 ```
 
@@ -154,7 +155,7 @@ npm run package -- TeamName   # verify + build, then write the submission ZIP an
 | File | What it does |
 |---|---|
 | `src/config.js` | Every tuning value: physics, elements, progression, scoring, spikes, ending |
-| `src/tower.js` | The daily tower generator: route, platforms, element chains, spike patterns |
+| `src/tower.js` | The tower generator (a new random seed each run): route, platforms, element chains, spike patterns |
 | `src/GameScene.js` | Input, simulation, elements, scoring, doors, camera, ending |
 | `src/physics.js` | Flight integration and the aim preview |
 | `src/draw.js` | All rendering (shapes only) |
