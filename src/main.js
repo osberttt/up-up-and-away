@@ -16,3 +16,8 @@ const game = new Phaser.Game({
 
 if (import.meta.env.DEV) window.game = game; // handle for debugging in the console
 
+// Dev only: ?rec records the game to a video file (see recorder.js).
+if (import.meta.env.DEV && new URLSearchParams(location.search).has('rec')) {
+  game.events.once('ready', () => import('./recorder.js').then((m) => m.startRecorder(game.canvas)));
+}
+

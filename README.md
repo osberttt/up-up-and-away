@@ -15,7 +15,7 @@
 
 Up Up and Away is a one-finger arcade climber about going up, then up, then *woooo*. Drag anywhere and release to fling a small ball upward like a slingshot. Hop between springs, balloons, kites, portals, planets and more that launch you higher, and chain them into combos. Avoid the spikes, climb through 25 doors and a hand-picked colour journey from soft pastel mornings to the night sky, and at 2500 m float off into space.
 
-Every run climbs a new random tower. Today's best score, the last 7 runs and the day streak are kept on the device.
+There's one tower a day: every run that day climbs the same tower, and tomorrow brings a different climb. Today's best score, the last 7 runs and the day streak are kept on the device.
 
 ## 2. How to open and play
 
@@ -57,7 +57,7 @@ Every run climbs a new random tower. Today's best score, the last 7 runs and the
 | 1500 m | Rail | Touch the track, slide the ramp, get flung off the end. |
 | 2000 m | Comet | An electric field traps you for a moment, then a comet blasts you up. |
 
-Higher up, elements are stronger and fewer, and older ones turn up less. Spikes grow denser and faster toward the top, and new kinds join as you climb: swinging saws (150 m, 250 m), patrolling spikes (400 m), pulsing spikes that grow and shrink (700 m), wide, slowly turning rings of spikes you time your way through (1100 m) and wavy spikes (1600 m). A faint line shows where each moving spike goes.
+Higher up, elements are stronger and fewer, and older ones turn up less. Spikes grow denser and faster toward the top, and new kinds join as you climb: swinging saws (150 m, 250 m), patrolling spikes (400 m), pulsing spikes that grow and shrink (700 m), wide, slowly turning rings of spikes you time your way through (1100 m) and wavy spikes (1600 m). A faint line shows where each moving spike goes. Spikes are placed on purpose: some sit right beside your route so you aim around them, others sit off to the side and only catch wild shots, and more of them get in your way as you climb. The first 100 m are a gentle start: fewer spikes, no hops that need a mid-air fling, and always a platform within one fling.
 
 **Score.** Each element is worth +50, hit within 2.5 s of each other for a chain (NICE → GOOD → GREAT → AMAZING → FANTASTIC). Doors score by speed since the previous door: under 14 s is +300, down to +25 for slow climbs. Height alone scores nothing. Today's best run score is saved.
 
@@ -104,7 +104,7 @@ Tested on: iPhone 12 Pro (iOS), plus a desktop browser during development.
 
   These test options exist **only** in the development server, not in the released build.
 - **A fresh start:** the pause menu has **RESTART TOWER** (tap twice). Clearing the site's storage resets everything.
-- **A new tower each run:** every run (each page load, death or PLAY AGAIN) generates a new random tower, so two testers will not see the same climb.
+- **One tower a day:** the tower is built from the date, so every run that day (each page load, death or PLAY AGAIN) climbs the same tower, and two testers on the same day see the same climb. It changes at the player's local midnight; the bottom of the pause menu says so.
 
 ## 10. Third-party tools and libraries
 
@@ -134,8 +134,7 @@ In short: Claude Code (Anthropic, Claude Opus model family), working under my di
 ## 13. Repository and submitted version
 
 - **Repository:** [[PRIVATE GITHUB URL]]. Reviewer access is given to [[ACCOUNT/EMAIL ANNOUNCED BY DIGIT7S]].
-- **Submitted version:** `1.0.0`, git tag **`v1.0.0`**. The version is also shown at the bottom of the in-game pause menu.
-- The playable link, the build ZIP and the tag are all built from the same commit.
+- **Submitted version:** `1.0.0`, git tag **`v1.0.0`**.- The playable link, the build ZIP and the tag are all built from the same commit.
 
 ## Build and run from source
 
@@ -155,7 +154,7 @@ npm run package -- TeamName   # verify + build, then write the submission ZIP an
 | File | What it does |
 |---|---|
 | `src/config.js` | Every tuning value: physics, elements, progression, scoring, spikes, ending |
-| `src/tower.js` | The tower generator (a new random seed each run): route, platforms, element chains, spike patterns |
+| `src/tower.js` | The tower generator (seeded by the date: one tower a day): route, platforms, element chains, spike patterns |
 | `src/GameScene.js` | Input, simulation, elements, scoring, doors, camera, ending |
 | `src/physics.js` | Flight integration and the aim preview |
 | `src/draw.js` | All rendering (shapes only) |

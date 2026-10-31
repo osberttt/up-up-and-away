@@ -1098,7 +1098,7 @@ export class GameScene extends Phaser.Scene {
     this.persist();
   }
 
-  // A death starts a new run, on a new random tower, back at 0m (the run was saved in die).
+  // A death starts a new run, on the same day's tower, back at 0m (the run was saved in die).
   respawn() {
     if (this.leaving) return;
     this.leaving = true;

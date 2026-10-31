@@ -2,17 +2,33 @@
 let ctx = null;
 let master = null;
 let muted = false;
+let tap = null; // a copy of the output as a MediaStream, for the dev recorder
+
+function setup() {
+  if (ctx) return true;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return false;
+  ctx = new AC();
+  master = ctx.createGain();
+  master.gain.value = 0.35;
+  master.connect(ctx.destination);
+  return true;
+}
 
 export function unlockAudio() {
-  if (!ctx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    ctx = new AC();
-    master = ctx.createGain();
-    master.gain.value = 0.35;
-    master.connect(ctx.destination);
-  }
+  if (!setup()) return;
   if (ctx.state === 'suspended') ctx.resume();
+}
+
+// The game's sound as a MediaStream (dev recorder, see recorder.js). The context starts
+// suspended until the first touch, like always.
+export function audioStream() {
+  if (!setup()) return null;
+  if (!tap) {
+    tap = ctx.createMediaStreamDestination();
+    master.connect(tap);
+  }
+  return tap.stream;
 }
 
 export function setMuted(value) {
