@@ -116,10 +116,10 @@ Tested on: iPhone 12 Pro (iOS), plus a desktop browser during development.
 
 ## 11. Asset credits
 
-Everything you see and hear is made by the game's own code. There are **no image, sprite, font, music or sound files**:
+Everything you see and hear is made by the game's own code, which was mostly written by Claude Code (AI) under my direction. There are **no image, sprite, font, music or sound files**:
 
-- **Graphics:** drawn at runtime with code (circles, polygons, lines).
-- **Sound:** synthesized at runtime with the Web Audio API.
+- **Graphics:** drawn at runtime with code (circles, polygons, lines). The drawing code was written by Claude Code; I directed the look.
+- **Sound:** synthesized at runtime with the Web Audio API. The sound code was written by Claude Code; I directed the sounds.
 - **Text:** the device's built-in system font (Segoe UI / system-ui / -apple-system / Roboto, whichever is installed). No font is bundled or downloaded.
 - **Colour palettes:** all 50 colour sets were generated with AI (Claude) and arranged into a colour journey under my direction (see section 12).
 
@@ -129,11 +129,11 @@ Full list: [submission/ASSET_CREDITS.md](submission/ASSET_CREDITS.md).
 
 AI assistance was used, and is declared in full in [submission/AI_USE_DECLARATION.md](submission/AI_USE_DECLARATION.md).
 
-In short: Claude Code (Anthropic, Claude Opus model family), working under my direction, wrote and revised most of the source code, the test scripts, all the colour palettes and the documentation. The game's design, every gameplay decision, its tuning and its testing were directed and checked by me. No AI-generated images, music or voice are used.
+In short: Claude Code (Anthropic, Claude Opus model family), working under my direction, wrote and revised most of the source code (including the code that draws all the graphics and makes all the sounds), the test scripts, all the colour palettes, the documentation and the cover image. The game's design, every gameplay decision, its look, its tuning and its testing were directed and checked by me. No image, music or voice generator was used, and the demo video is my own play.
 
 ## 13. Repository and submitted version
 
-- **Repository:** [[PRIVATE GITHUB URL]]. Reviewer access is given to [[ACCOUNT/EMAIL ANNOUNCED BY DIGIT7S]].
+- **Repository:** https://github.com/osberttt/up-up-and-away
 - **Submitted version:** `1.0.0`, git tag **`v1.0.0`**.- The playable link, the build ZIP and the tag are all built from the same commit.
 
 ## Build and run from source
