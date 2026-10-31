@@ -129,7 +129,7 @@ export const COMET_COOLDOWN = 1.5;
 // snappier). Inside you count as launched (invincible, the lighter launch gravity), so you sail on
 // well past its top. Not a chain element: each route gap has WIND_CHANCE of one.
 export const WIND_W = [85, 125]; // column width
-export const WIND_H = [450, 700]; // column height
+export const WIND_H = [150, 235]; // column height
 export const WIND_GRIP = 14; // per second
 export const WIND_MAX = 1300; // upward speed it carries you at, at full gust (a gentle lift past its top)
 export const WIND_CHANCE = 0.22;
@@ -209,20 +209,7 @@ export const PORTAL_SPAN = [900, 1400]; // px from a blue portal up to its yello
 export const STAR_RADIUS = 48;
 export const STAR_CHANCE = 0.55;
 
-export const MAX_HP = 5;
-export const HEART_LIFE = 10; // seconds a heart lasts once it is on screen
-export const HEART_RESPAWN = 12; // seconds after a heart is taken or fades until it comes back
-// Chance of a heart spot per main platform: from the first value at the ground to the second at
-// END_HEIGHT (more hearts higher up, where the spikes are).
-export const HEART_CHANCE = [0.15, 0.45];
-// Whether a heart spot shows when it comes on screen depends on the hearts you have: [hearts,
-// chance] points, in between is a blend. Low on hearts, they show up; full, they rarely do.
-export const HEART_SHOW = [
-  [1, 1],
-  [3, 0.5],
-  [5, 0.1],
-];
-export const HEART_REROLL = 4; // seconds before a heart spot that didn't show tries again
+export const MAX_HP = 5; // hearts; there are no heart pickups, only doors give them back
 export const DOOR_EVERY = 100; // m between doors; passing one gives back one heart (it flies up to the bar)
 export const RESPAWN_DELAY = 0.9;
 
@@ -233,12 +220,15 @@ export const RESPAWN_DELAY = 0.9;
 //   sawX: moves side to side   pair: a gate, one each side of the route
 //   row: three small in a diagonal line                 wall: teeth on a wall    none: a breather
 //   patrol: slides back and forth at a steady speed     pulse: grows and shrinks
-//   orbit: two or three small spikes circling a point   wave: drifts across, bobbing up and down
+//   orbit: a wide, slow ring of spikes you go through   wave: drifts across, bobbing up and down
 export const SPIKE_BAG = ['spike', 'spike', 'big', 'saw', 'sawX', 'pair', 'row', 'wall', 'patrol', 'pulse', 'orbit', 'wave', 'none', 'none', 'none', 'none', 'none'];
 // Progression: the height (m) where each pattern starts turning up (the rest are there from 0m).
 export const SPIKE_FROM = { saw: 150, sawX: 250, patrol: 400, pulse: 700, orbit: 1100, wave: 1600 };
 export const PULSE_MIN = 0.3; // a pulsing spike shrinks to this much of its full size
-export const ORBIT_THREE = 1800; // m from where orbits have three spikes instead of two
+// Orbit: a wide ring of spikes around a point on the route, turning slowly: you go through it.
+export const RING_R = [110, 140]; // ring radius (px)
+export const RING_PERIOD = [10, 14]; // seconds per full turn
+export const RING_MORE = 1800; // m from where rings have four spikes instead of three
 // Spikes get harder as you climb: each of these goes from its first value at the ground to its
 // second at END_HEIGHT, along a curve (height fraction ^ SPIKE_CURVE): gentle early, steep late.
 export const SPIKE_CURVE = 1.4;

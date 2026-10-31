@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import * as C from './config.js';
-import { Tower, platformX, hazardPos, hazardR, heartPos, doorHeight, nextDoorIndex, elevatorOffset, elevatorIdle, railAt, bubblePos, kitePos, kiteTow, windGust, kiteShot, cometShot } from './tower.js';
+import { Tower, platformX, hazardPos, hazardR, doorHeight, nextDoorIndex, elevatorOffset, elevatorIdle, railAt, bubblePos, kitePos, kiteTow, windGust, kiteShot, cometShot } from './tower.js';
 import { integrate, substeps, launchSpeed, previewPath, MIN_X, MAX_X } from './physics.js';
 import { dayKey } from './rng.js';
 import * as Save from './save.js';
@@ -13,17 +13,6 @@ const STEP = 1 / 120;
 const CAM_EASE = 5; // per second: how fast the camera catches up with its target
 const clamp = Phaser.Math.Clamp;
 
-// Chance a heart shows, for the hearts you have: HEART_SHOW's points, blended in between.
-function heartShowChance(hp) {
-  const pts = C.HEART_SHOW;
-  if (hp <= pts[0][0]) return pts[0][1];
-  for (let i = 1; i < pts.length; i++) {
-    const [h0, c0] = pts[i - 1];
-    const [h1, c1] = pts[i];
-    if (hp <= h1) return c0 + ((c1 - c0) * (hp - h0)) / (h1 - h0);
-  }
-  return pts[pts.length - 1][1];
-}
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -59,14 +48,12 @@ export class GameScene extends Phaser.Scene {
     this.near = [];
     this.drawPlats = [];
     this.drawHaz = [];
-    this.drawHearts = [];
     this.drawFunnels = [];
     this.drawPortals = [];
     this.drawStars = [];
     this.drawElevs = [];
     this.drawThings = [];
     this.nearItems = [];
-    this.nearHearts = [];
 
     const R = C.PLAYER_R;
     this.player = {
@@ -575,10 +562,7 @@ export class GameScene extends Phaser.Scene {
     // A kite carries you only while its launch lasts.
     if (pl.kite && !pl.launched) this.dropKite();
     if (pl.hitT <= 0 && !this.carried() && !pl.launched) this.checkHazards();
-    if (!pl.dead) {
-      this.updateHearts();
-      this.updateStars();
-    }
+    if (!pl.dead) this.updateStars();
     this.updateHeight();
   }
 
@@ -1004,47 +988,6 @@ export class GameScene extends Phaser.Scene {
     Object.assign(pl, { warp: null, portalT: 0.3 });
     this.launch(0, -C.PORTAL_EXIT);
     this.burst(pl.x, pl.y, portalColor(w.to, this.col), 10, 200);
-  }
-
-  // A heart spot coming on screen shows a heart by chance, likelier the fewer hearts you have
-  // (HEART_SHOW); if not, it tries again HEART_REROLL later. A shown heart starts a HEART_LIFE
-  // countdown, then vanishes. A taken or faded heart comes back HEART_RESPAWN later.
-  // At full HP you pass through them.
-  updateHearts() {
-    const pl = this.player;
-    const top = this.cameras.main.scrollY;
-    const rr = (C.PLAYER_R + 16) ** 2;
-    const full = pl.hp >= C.MAX_HP;
-    const gone = (ht, wait) => Object.assign(ht, { gone: true, goneT: this.simT, wait });
-    for (const ht of this.tower.heartsIn(top - 60, top + C.H + 60, this.nearHearts)) {
-      if (ht.gone) {
-        if (this.simT - ht.goneT < ht.wait) continue;
-        ht.gone = false;
-        ht.seenT = null;
-      }
-      const [x, y] = heartPos(ht, this.simT);
-      if (ht.seenT == null) {
-        if (y < top || y > top + C.H) continue;
-        if (Math.random() > heartShowChance(pl.hp + this.heartsFlying)) {
-          gone(ht, C.HEART_REROLL);
-          continue;
-        }
-        ht.seenT = this.simT;
-      }
-      if (this.simT - ht.seenT > C.HEART_LIFE) {
-        gone(ht, C.HEART_RESPAWN);
-        sfx.heartGone();
-        this.burst(x, y, this.col.heart, 6, 90);
-      } else if (!full && (pl.x - x) ** 2 + (pl.y - y) ** 2 < rr) {
-        gone(ht, C.HEART_RESPAWN);
-        pl.hp++;
-        this.elementScore(x, y);
-        this.dirty = true;
-        sfx.heart();
-        buzz(15);
-        this.burst(x, y, this.col.heart, 12, 200);
-      }
-    }
   }
 
   // Doors are solid once today's best has passed them. Crumbling platforms break

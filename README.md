@@ -57,7 +57,7 @@ Every run climbs a new random tower. Today's best score, the last 7 runs and the
 | 1500 m | Rail | Touch the track, slide the ramp, get flung off the end. |
 | 2000 m | Comet | An electric field traps you for a moment, then a comet blasts you up. |
 
-Higher up, elements are stronger and fewer, and older ones turn up less. Spikes grow denser and faster toward the top, and new kinds join as you climb: swinging saws (150 m, 250 m), patrolling spikes (400 m), pulsing spikes that grow and shrink (700 m), orbits of spikes circling a point (1100 m) and wavy spikes (1600 m). A faint line shows where each moving spike goes.
+Higher up, elements are stronger and fewer, and older ones turn up less. Spikes grow denser and faster toward the top, and new kinds join as you climb: swinging saws (150 m, 250 m), patrolling spikes (400 m), pulsing spikes that grow and shrink (700 m), wide, slowly turning rings of spikes you time your way through (1100 m) and wavy spikes (1600 m). A faint line shows where each moving spike goes.
 
 **Score.** Each element is worth +50, hit within 2.5 s of each other for a chain (NICE → GOOD → GREAT → AMAZING → FANTASTIC). Doors score by speed since the previous door: under 14 s is +300, down to +25 for slow climbs. Height alone scores nothing. Today's best run score is saved.
 

@@ -1,6 +1,6 @@
 import * as C from './config.js';
 import { hash01 } from './rng.js';
-import { platformX, hazardPos, hazardR, heartPos, doorHeight, elevatorOffset, railAt, bubblePos, kitePos, kiteTow, windGust } from './tower.js';
+import { platformX, hazardPos, hazardR, doorHeight, elevatorOffset, railAt, bubblePos, kitePos, kiteTow, windGust } from './tower.js';
 import { sectionPalette, mixColor } from './palettes.js';
 
 const TAU = Math.PI * 2;
@@ -104,7 +104,6 @@ export function drawWorld(sc, aim) {
   for (const t of sc.tower.thingsIn(top - 160, bottom + 160, sc.drawThings)) drawThing(sc, g, t, col);
   drawPortalFx(sc, g);
   for (const st of sc.tower.starsIn(top - 60, bottom + 60, sc.drawStars)) drawStar(sc, g, st, col);
-  for (const ht of sc.tower.heartsIn(top - 60, bottom + 60, sc.drawHearts)) drawPickup(sc, g, ht, col);
   drawTrail(sc, g);
   if (aim) drawAim(sc, g, col, aim);
   if (!sc.player.dead) {
@@ -620,10 +619,8 @@ function drawHazard(sc, g, hz, col) {
       pts.push({ x: hz.x + hz.ex * Math.sin(a), y: hz.y + hz.ey * Math.sin(3 * a) });
     }
     guide().strokePoints(pts, false);
-  } else if (hz.move === 'orbit' && !hz.copy) {
-    guide().strokeCircle(hz.x, hz.y, hz.orbit);
-    g.fillStyle(col.ink, 0.5).fillCircle(hz.x, hz.y, 5);
-  } else if (hz.pulse) guide().strokeCircle(hz.x, hz.y, hz.r);
+  } else if (hz.move === 'orbit' && !hz.copy) guide().strokeCircle(hz.x, hz.y, hz.orbit);
+  else if (hz.pulse) guide().strokeCircle(hz.x, hz.y, hz.r);
   // Moving spikes spin fast like saws; still ones turn slowly.
   if (hz.move) inkStar(g, x, y, r, 10, t * 6, 0.72, col.hazard, col.ink);
   else inkStar(g, x, y, r, 7, t * 0.6, 0.5, col.hazard, col.ink);
@@ -745,18 +742,6 @@ function drawPortalFx(sc, g) {
   }
 }
 
-// A heart pickup: pulses while alive and blinks through its last 1.5s.
-function drawPickup(sc, g, ht, col) {
-  const t = sc.simT;
-  if (ht.gone) return;
-  const left = ht.seenT == null ? C.HEART_LIFE : C.HEART_LIFE - (t - ht.seenT);
-  if (left <= 0) return;
-  if (left < 1.5 && Math.floor(left * (left < 0.6 ? 16 : 8)) % 2 === 0) return;
-  const [x, y] = heartPos(ht, t);
-  const s = 10 * (1 + 0.08 * Math.sin(t * 7));
-  g.fillStyle(0xffffff, 0.25).fillCircle(x, y + 1, 22);
-  inkHeart(g, x, y - 1, s, col.heart, col.ink);
-}
 
 // From the palette: the launch color while an element makes you invincible, else a cool color
 // when a jump is ready and a warm one while it cools down.

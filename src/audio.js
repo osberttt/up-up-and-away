@@ -45,7 +45,6 @@ export const sfx = {
   hit: () => tone(210, 0.3, { type: 'sawtooth', to: 50, vol: 0.3 }),
   die: () => [330, 220, 110].forEach((f, i) => tone(f, 0.3, { type: 'sawtooth', to: f * 0.5, vol: 0.25, delay: i * 0.12 })),
   heart: () => [880, 1175, 1760].forEach((f, i) => tone(f, 0.12, { vol: 0.2, delay: i * 0.06 })),
-  heartGone: () => tone(600, 0.12, { to: 300, vol: 0.08 }),
   funnel: () => tone(500, 0.35, { type: 'triangle', to: 140, vol: 0.2 }),
   portal: () => [520, 780].forEach((f, i) => tone(f, 0.2, { to: f * 1.5, vol: 0.18, delay: i * 0.05 })),
   star: () => [1320, 1760].forEach((f, i) => tone(f, 0.1, { type: 'triangle', vol: 0.18, delay: i * 0.05 })),

@@ -26,6 +26,10 @@ function hitsHazard(b, hazards) {
     if (hz.kind === 'wall') {
       const touching = hz.side < 0 ? b.x - R <= C.WALL + 12 : b.x + R >= C.W - C.WALL - 12;
       if (touching && b.y + R * 0.5 > hz.y0 && b.y - R * 0.5 < hz.y1) return true;
+    } else if (hz.move === 'orbit') {
+      // Spike rings are meant to be flown through by timing a gap (they're wide and turn slowly,
+      // and every gap is several balls wide), so this static check skips them.
+      continue;
     } else {
       const rr = R + hz.r * 0.8;
       // Moving spikes count over the whole box they move in.
@@ -116,7 +120,6 @@ for (const day of days) {
   }
   const types = {};
   for (const p of tower.platforms) types[p.type] = (types[p.type] || 0) + 1;
-  types.hearts = tower.hearts.length;
   types.funnels = tower.funnels.length;
   types.elevators = tower.elevators.length;
   for (const t of tower.things) types[`${t.kind}s`] = (types[`${t.kind}s`] || 0) + 1;

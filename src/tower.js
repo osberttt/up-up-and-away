@@ -1,5 +1,5 @@
 import * as C from './config.js';
-import { Rng, hashString, noise1 } from './rng.js';
+import { Rng, hashString } from './rng.js';
 import { integrate } from './physics.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -109,11 +109,6 @@ export function windGust(t, time) {
   return 0.875 + 0.125 * Math.sin(time * 1.8 + t.phase);
 }
 
-// Hearts drift around their spot on slow, smooth noise.
-export function heartPos(ht, t) {
-  const x = clamp(ht.x + 70 * noise1(ht.seed, t * 0.45), C.WALL + 24, C.W - C.WALL - 24);
-  return [x, ht.y + 45 * noise1(ht.seed + 1, t * 0.4)];
-}
 
 // Height (px) a launch at `speed` rises before it peaks.
 const riseOf = (speed) => (speed * speed) / (2 * C.GRAVITY);
@@ -242,9 +237,7 @@ export class Tower {
     this.hazards = [];
     this.platGrid = new Grid(600);
     this.hazGrid = new Grid(600);
-    this.hearts = [];
-    this.heartGrid = new Grid(600);
-    // Hearts and loose stars use their own stream so they never change the rest of the tower.
+    // Loose stars use their own stream so they never change the rest of the tower.
     this.itemRng = new Rng(this.seed ^ 0x5bd1e995);
     this.stars = [];
     this.starGrid = new Grid(600);
@@ -310,10 +303,6 @@ export class Tower {
 
   hazardsIn(y0, y1, out) {
     return this.hazGrid.query(y0, y1, out);
-  }
-
-  heartsIn(y0, y1, out) {
-    return this.heartGrid.query(y0, y1, out);
   }
 
   funnelsIn(y0, y1, out) {
@@ -423,7 +412,6 @@ export class Tower {
     this.layChain(from, p);
     this.addWind(from, p);
     this.placeSpikes(from, p);
-    this.addHeart(from, p);
     this.addStar(from, p);
   }
 
@@ -819,17 +807,9 @@ export class Tower {
       case 'pulse':
         this.addSpike(from, to, { type: 'pulse', rad: [24, 32], move: () => ({ pulse: TAU / r.range(1.4, 2.4) }) });
         break;
-      case 'orbit': {
-        // Small spikes circling an empty middle, evenly spaced.
-        const move = () => {
-          const orbit = r.range(42, 60);
-          return { move: 'orbit', orbit, ex: orbit, ey: orbit, speedMul: r.chance(0.5) ? 1 : -1 };
-        };
-        const hz = this.addSpike(from, to, { type: 'orbit', rad: [11, 14], move });
-        const n = -to.y / C.PX_PER_M >= C.ORBIT_THREE ? 3 : 2;
-        for (let k = 1; hz && k < n; k++) this.addHazard({ ...hz, phase: hz.phase + (TAU * k) / n, copy: true });
+      case 'orbit':
+        this.addOrbit(from, to);
         break;
-      }
       case 'wave': {
         const move = () => ({ move: 'wave', ex: r.range(45, 80), ey: r.range(18, 30), speedMul: 0.7 });
         this.addSpike(from, to, { type: 'wave', rad: [14, 20], move });
@@ -900,6 +880,29 @@ export class Tower {
     return null;
   }
 
+  // An orbit: a wide ring of spikes turning slowly around a point on the route, so the way up
+  // goes through it; you time your jump through a gap. It sits between the two platforms of the
+  // gap, clear of both.
+  addOrbit(from, to) {
+    const r = this.rng;
+    const orbit = r.range(...C.RING_R);
+    const rad = r.range(13, 16);
+    const reach = orbit + rad;
+    if (from.y - to.y < 2 * reach + 80) return null; // the gap is too short to hold the ring
+    const cy = (from.y + to.y) / 2;
+    const px = this.pathX(from, to, cy);
+    const cx = clamp(px, C.WALL + reach + 4, C.W - C.WALL - reach - 4);
+    if (Math.abs(cx - px) > orbit * 0.5) return null; // the route would only graze it
+    if (this.doorNear(cy, reach + 40) !== null || this.inZone(cx, cy, reach, 'element') || this.portalNear(cx, cy, reach + 40)) return null;
+    // Other platforms (ledges) inside the ring's reach would be swept; skip.
+    for (const p of this.platformsIn(cy - reach, cy + reach, this.scratch)) if (p !== from && p !== to && Math.abs(p.y - cy) < reach && Math.abs(p.x - cx) < reach + p.w / 2) return null;
+    const n = -to.y / C.PX_PER_M >= C.RING_MORE ? 4 : 3;
+    const dir = r.chance(0.5) ? 1 : -1;
+    const hz = { kind: 'spike', type: 'orbit', x: cx, y: cy, r: rad, move: 'orbit', orbit, ex: orbit, ey: orbit, speed: (dir * TAU) / r.range(...C.RING_PERIOD), phase: r.range(0, TAU) };
+    for (let k = 0; k < n; k++) this.addHazard({ ...hz, phase: hz.phase + (TAU * k) / n, copy: k > 0 });
+    return hz;
+  }
+
   // Spikes on a wall segment: punishes careless bank shots.
   addWallSpikes(from, to) {
     const r = this.rng;
@@ -932,21 +935,6 @@ export class Tower {
       this.doors[next] = this.addPlatform({ x: C.W / 2, y: -doorHeight(next) * C.PX_PER_M, w: C.W - 2 * C.WALL, type: 'door', n: next });
       next++;
     }
-  }
-
-  // A heart spot, likelier higher up (HEART_CHANCE). Runtime state: seenT starts the HEART_LIFE
-  // countdown, goneT the wait (`wait` seconds) before it can show again (see GameScene.updateHearts).
-  addHeart(from, to) {
-    const r = this.itemRng;
-    const roll = r.next();
-    const x = r.range(C.WALL + 60, C.W - C.WALL - 60);
-    const y = lerp(from.y, to.y, r.range(0.3, 0.8));
-    const seed = Math.floor(r.range(0, 1e6));
-    const chance = lerp(C.HEART_CHANCE[0], C.HEART_CHANCE[1], clamp(-y / C.PX_PER_M / C.END_HEIGHT, 0, 1));
-    if (roll > chance || this.atStart(y + 60) || this.hazardNear(x, y, 110, 90) || this.inZone(x, y, 60, 'element') || this.portalNear(x, y, 80)) return;
-    const ht = { x, y, seed, seenT: null, gone: false, goneT: 0, wait: 0 };
-    this.hearts.push(ht);
-    this.heartGrid.add(ht, y - 60, y + 60);
   }
 
   // Loose stars (points only) hang along the route, so collecting them means flying it.

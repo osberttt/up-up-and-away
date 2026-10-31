@@ -21,9 +21,8 @@ export const PALETTES = [
   // Daylight and noon: paper white, then the sun
   { name: 'Bauhaus', mood: 'bright', bg: '#f4efe1', fg: '#111111', accents: ['#e63946', '#1d3557', '#f1c40f', '#2a9d8f', '#f77f00'] },
   { name: 'Tropical', mood: 'bright', bg: '#ffe66d', fg: '#1a1a2e', accents: ['#ff6b6b', '#1a9e97', '#1a535c', '#ff9f1c', '#c44dff'] },
-  // Sunset embers: the light goes, warm oranges on dark
-  { name: 'Autumn Market', mood: 'earthy', bg: '#2b1b12', fg: '#fff1e0', accents: ['#e85d04', '#faa307', '#d62828', '#8ab17d', '#ffba08'] },
-  { name: 'Volcano', mood: 'dark', bg: '#1c0f0f', fg: '#ffeede', accents: ['#ff4d1a', '#ffb000', '#00c2d1', '#9b5de5', '#f15bb5'] },
+  // Sunset: a saturated magenta sky, from the sun into the purples
+  { name: 'Magenta Dusk', mood: 'bright', bg: '#c2185b', fg: '#fff0f5', accents: ['#ffd23f', '#3bceac', '#7fd1f5', '#ff9e57', '#b39dff'] },
   // Dusk: purples
   { name: 'Grape Soda', mood: 'dark', bg: '#5b2386', fg: '#fbeaff', accents: ['#ffd23f', '#3bceac', '#ff6f91', '#9ad1ff', '#ff9a3c'] },
   { name: 'Disco', mood: 'bright', bg: '#3a0ca3', fg: '#ffffff', accents: ['#f72585', '#4cc9f0', '#ffd60a', '#06d6a0', '#ff9e00'] },
@@ -37,6 +36,7 @@ export const PALETTES = [
   { name: 'Midnight Garden', mood: 'dark', bg: '#0f1a14', fg: '#eaf4e4', accents: ['#7bd389', '#f7b2bd', '#f6e27f', '#a0c4ff', '#ff8c61'] },
   { name: 'Slate & Coral', mood: 'dull', bg: '#2f3640', fg: '#f5f6fa', accents: ['#ff7f6b', '#ffd479', '#7ed6df', '#c7ecee', '#e056fd'] },
   { name: 'Ink & Gold', mood: 'dark', bg: '#14141f', fg: '#f4ecd8', accents: ['#e0b04f', '#e05d5d', '#5fb4e0', '#7ad18a', '#c38ce0'] },
+  { name: 'Volcano', mood: 'dark', bg: '#1c0f0f', fg: '#ffeede', accents: ['#ff4d1a', '#ffb000', '#00c2d1', '#9b5de5', '#f15bb5'] },
   // Toward space: neon in the dark
   { name: 'Plum Jam', mood: 'dark', bg: '#3d1a3b', fg: '#ffeef8', accents: ['#ff7096', '#ffd166', '#56cfe1', '#80ffdb', '#ff9e00'] },
   { name: 'Vaporwave', mood: 'neon', bg: '#2d1b4e', fg: '#fff0fb', accents: ['#ff71ce', '#01cdfe', '#05ffa1', '#fffb96', '#b967ff'] },
