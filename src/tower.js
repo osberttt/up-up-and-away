@@ -410,7 +410,6 @@ export class Tower {
   // Lays out elements whose planned spot this gap has reached. Between chains, waits a few
   // route steps, then starts a new chain beside the route.
   layChain(from, to) {
-    const r = this.rng;
     if (!this.chain) {
       if (this.atStart(to.y) || -to.y / C.PX_PER_M >= C.END_HEIGHT || --this.chainBreak > 0) return;
       // Nothing unlocked yet at this height: no chain (progression, see ELEMENT_FROM).
@@ -418,7 +417,7 @@ export class Tower {
       if (first === null) return;
       const spot = this.clearSpot(from, to, 60);
       if (!spot) return; // try again next step
-      this.chain = { target: spot, type: first, left: Math.floor(r.range(C.CHAIN_LENGTH[0], C.CHAIN_LENGTH[1] + 1)) };
+      this.chain = { target: spot, type: first, left: this.byHeight(C.CHAIN_LENGTH, to.y) };
       this.chainStats.chains++;
     }
     // The planned spot may be several gaps up; lay it once the route reaches that height.
@@ -440,7 +439,7 @@ export class Tower {
       else this.chainStats.failed++;
       if (!peak || --this.chain.left <= 0) {
         this.chain = null;
-        this.chainBreak = Math.floor(r.range(C.CHAIN_BREAK[0], C.CHAIN_BREAK[1] + 1));
+        this.chainBreak = this.byHeight(C.CHAIN_BREAK, t.y);
         if (peak) this.addPeakStar(peak);
         return;
       }
@@ -449,7 +448,7 @@ export class Tower {
       const nextType = this.pickElement(peak.y);
       if (nextType === null) {
         this.chain = null;
-        this.chainBreak = Math.floor(r.range(C.CHAIN_BREAK[0], C.CHAIN_BREAK[1] + 1));
+        this.chainBreak = this.byHeight(C.CHAIN_BREAK, t.y);
         return;
       }
       const next = this.hopFrom(peak, nextType);
@@ -458,6 +457,12 @@ export class Tower {
       this.chain.target = next;
       this.chain.type = nextType;
     }
+  }
+
+  // A whole number from a [[min, max] at the ground, [min, max] at END_HEIGHT] setting, at y (px).
+  byHeight([lo, hi], y) {
+    const k = clamp(-y / C.PX_PER_M / C.END_HEIGHT, 0, 1);
+    return Math.floor(this.rng.range(lerp(lo[0], hi[0], k), lerp(lo[1], hi[1], k) + 1));
   }
 
   // A weighted pick among the chain elements unlocked at height y (px): each starts at full weight
@@ -739,14 +744,15 @@ export class Tower {
     const at = (range) => lerp(range[0], range[1], d);
     let pattern = this.spikeBag.next();
     if (pattern === 'none' && r.chance(at(C.SPIKE_FILL))) pattern = this.spikeBag.next((p) => p !== 'none');
+    if (r.chance(at(C.SPIKE_SKIP))) pattern = 'none';
     this.placePattern(from, to, pattern);
     if (r.chance(at(C.SPIKE_DOUBLE))) this.placePattern(from, to, this.spikeBag.next((p) => p !== 'none'));
     if (r.chance(at(C.SPIKE_EXTRA))) this.addSpike(from, to, { rad: [14, 24] });
   }
 
-  // 0 at the ground to 1 at END_HEIGHT: how hard the spikes are here.
+  // 0 at the ground to 1 at END_HEIGHT: how hard the spikes are here (gentle early, steep late).
   spikeLevel(y) {
-    return clamp(-y / C.PX_PER_M / C.END_HEIGHT, 0, 1);
+    return clamp(-y / C.PX_PER_M / C.END_HEIGHT, 0, 1) ** C.SPIKE_CURVE;
   }
 
   placePattern(from, to, pattern) {

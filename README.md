@@ -1,12 +1,12 @@
-# Up Up and Away
+﻿# Up Up and Away
 
-**Digit7 Jam 2026 submission** · version **1.0.0** · submission tag `v1.0.0`
+**Digit7 Jam 2026 submission** Â· version **1.0.0** Â· submission tag `v1.0.0`
 
 | | |
 |---|---|
 | Game title | Up Up and Away |
 | Developer | Osbert (solo) |
-| Main contact | Osbert · minhtetnaing25mhn@gmail.com · Telegram @minhtetnaing111 |
+| Main contact | Osbert Â· minhtetnaing25mhn@gmail.com Â· Telegram @minhtetnaing111 |
 | Genre | Arcade vertical climber (one-touch slingshot) |
 | Engine | Phaser 3.90 (JavaScript), built with Vite |
 | Playable link | [[DIGIT7S HOSTING URL]] |
@@ -59,7 +59,7 @@ Everyone gets the same tower each day, and today's best score and streak are kep
 
 Spikes grow denser and saws faster toward the top.
 
-**Score.** Each element is worth +50, hit within 2.5 s of each other for a chain (NICE → GOOD → GREAT → AMAZING → FANTASTIC). Doors score by speed since the previous door: under 14 s is +300, down to +25 for slow climbs. Height alone scores nothing. Today's best run score is saved.
+**Score.** Each element is worth +50, hit within 2.5 s of each other for a chain (NICE â†’ GOOD â†’ GREAT â†’ AMAZING â†’ FANTASTIC). Doors score by speed since the previous door: under 14 s is +300, down to +25 for slow climbs. Height alone scores nothing. Today's best run score is saved.
 
 ## 4. Supported browsers
 
@@ -76,8 +76,8 @@ Tested on: iPhone 12 Pro (iOS), plus a desktop browser during development.
 
 - **Recommended orientation:** portrait.
 - **Playfield:** 540 units wide; its height adapts to the screen (900 to 1200 units), so tall phones are filled edge to edge.
-- **Mobile:** works at 360 × 640 and up. Recommended aspect ratio 9:16 to 9:21.
-- **Desktop:** works at 1280 × 720 and up. On a landscape screen the game is shown as a centred portrait column, with side bars filled in the current palette colour.
+- **Mobile:** works at 360 Ã— 640 and up. Recommended aspect ratio 9:16 to 9:21.
+- **Desktop:** works at 1280 Ã— 720 and up. On a landscape screen the game is shown as a centred portrait column, with side bars filled in the current palette colour.
 - Text, buttons and the score are scaled with the playfield and stay readable without zooming. No horizontal scrolling. Rendering is sharp on high-DPI screens.
 
 ## 7. Internet, APIs and third-party services
@@ -128,7 +128,7 @@ Full list: [submission/ASSET_CREDITS.md](submission/ASSET_CREDITS.md).
 
 AI assistance was used, and is declared in full in [submission/AI_USE_DECLARATION.md](submission/AI_USE_DECLARATION.md).
 
-In short: Claude Code (Anthropic, Claude Opus model family), working under my direction, wrote and revised most of the source code, the test scripts, all 50 colour palettes and the documentation. The game's design, every gameplay decision, its tuning and its testing were directed and checked by me. No AI-generated images, music or voice are used.
+In short: Claude Code (Anthropic, Claude Opus model family), working under my direction, wrote and revised most of the source code, the test scripts, all the colour palettes and the documentation. The game's design, every gameplay decision, its tuning and its testing were directed and checked by me. No AI-generated images, music or voice are used.
 
 ## 13. Repository and submitted version
 
@@ -158,7 +158,7 @@ npm run package -- TeamName   # verify + build, then write the submission ZIP an
 | `src/GameScene.js` | Input, simulation, elements, scoring, doors, camera, ending |
 | `src/physics.js` | Flight integration and the aim preview |
 | `src/draw.js` | All rendering (shapes only) |
-| `src/palettes.js` | The 50 colour palettes and the colour roles picked from them |
+| `src/palettes.js` | The 25 colour palettes and the colour roles picked from them |
 | `src/ui.js` | Top bar, pause menu, buttons |
 | `src/save.js` | `localStorage` save with daily rollover, history and streak |
 | `src/audio.js` | Synthesized sound effects |

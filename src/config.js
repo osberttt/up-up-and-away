@@ -114,12 +114,13 @@ export const KITE_RETURN = 5;
 
 // Comet (an electric field): fly into the field and you're trapped in its middle for COMET_TRAP
 // seconds, crackling, while a comet streaks in from below. It hits you and blasts you off at
-// COMET_ANGLE (toward the middle of the screen) at COMET_HIT.
+// COMET_ANGLE (toward the middle of the screen) at COMET_HIT. The strongest launch in the game
+// (it unlocks last): it throws you higher than an elevator does.
 export const FIELD_R = 56;
 export const COMET_TRAP = 0.3;
 export const COMET_R = 18;
-export const COMET_ANGLE = (70 * Math.PI) / 180;
-export const COMET_HIT = 2200;
+export const COMET_ANGLE = (80 * Math.PI) / 180;
+export const COMET_HIT = 4000;
 export const COMET_COOLDOWN = 1.5;
 
 // Wind gust (an updraft): a column of wind blowing up. However you enter it (any direction, any
@@ -179,8 +180,10 @@ export const END_SPEED = 1300;
 export const END_EASE = 2.5;
 export const END_TITLE = 2; // seconds of rising before the title drops in
 export const END_BUTTON = 1; // seconds after the title before PLAY AGAIN appears
-export const CHAIN_LENGTH = [3, 6]; // elements per chain
-export const CHAIN_BREAK = [2, 4]; // path steps between chains
+// Higher up, elements are stronger, so there are fewer of them: chains get shorter and the breaks
+// between them longer, from the first range at the ground to the second at END_HEIGHT.
+export const CHAIN_LENGTH = [[3, 6], [2, 3]]; // elements per chain
+export const CHAIN_BREAK = [[2, 4], [5, 8]]; // path steps between chains
 export const CHAIN_DX = [60, 170]; // px sideways from the peak to the next element
 // px above the peak of the previous launch, to the part of the next element you aim for.
 export const CHAIN_DY = {
@@ -221,10 +224,12 @@ export const RESPAWN_DELAY = 0.9;
 //   row: three small in a diagonal line                 wall: teeth on a wall    none: a breather
 export const SPIKE_BAG = ['spike', 'spike', 'big', 'saw', 'sawX', 'pair', 'row', 'wall', 'none', 'none', 'none', 'none', 'none'];
 // Spikes get harder as you climb: each of these goes from its first value at the ground to its
-// second at END_HEIGHT.
-export const SPIKE_FILL = [0, 0.8]; // chance a 'none' (breather) gap gets a pattern anyway
-export const SPIKE_DOUBLE = [0, 0.4]; // chance of a second pattern in the same gap
-export const SPIKE_EXTRA = [0.1, 0.45]; // chance of a loose extra spike
+// second at END_HEIGHT, along a curve (height fraction ^ SPIKE_CURVE): gentle early, steep late.
+export const SPIKE_CURVE = 1.4;
+export const SPIKE_SKIP = [0.2, 0]; // chance a gap's pattern is left out (more breathers early)
+export const SPIKE_FILL = [0, 0.9]; // chance a 'none' (breather) gap gets a pattern anyway
+export const SPIKE_DOUBLE = [0, 0.5]; // chance of a second pattern in the same gap
+export const SPIKE_EXTRA = [0.05, 0.55]; // chance of a loose extra spike
 export const SAW_SPEED = [1, 1.6]; // how fast saws swing
 export const SPIKE_CORRIDOR = 80; // px kept clear each side of the route line
 
