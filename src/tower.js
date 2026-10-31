@@ -255,6 +255,7 @@ export class Tower {
     this.zoneGrid = new Grid(600);
     this.lastType = null; // the chain element placed last (see pickElement)
     this.spikeBag = new Bag(this.rng, C.SPIKE_BAG);
+    this.spikeDebt = 0; // spikes owed so far (see placeSpikes)
     this.chain = null; // { target: {x, y}, left } while a chain is being laid out
     this.chainBreak = 1; // path steps until the next chain starts
     this.chainStats = { chains: 0, links: 0, failed: 0 }; // for the verify script
@@ -366,8 +367,9 @@ export class Tower {
     const roll = r.next();
     if (roll < 0.22) type = 'moving';
     else if (roll < 0.42) type = 'crumble';
-    // Many route points stay empty air.
-    if (!r.chance(C.PLATFORM_CHANCE)) type = 'path';
+    // Many route points stay empty air; fewer higher up.
+    const k = this.spikeLevel(from.y);
+    if (!r.chance(lerp(C.PLATFORM_CHANCE[0], C.PLATFORM_CHANCE[1], k))) type = 'path';
 
     const minC = C.WALL + w / 2 + 4;
     const maxC = C.W - C.WALL - w / 2 - 4;
@@ -408,7 +410,7 @@ export class Tower {
     this.lastMain = p;
 
     if (space) return;
-    if (r.chance(C.SIDE_LEDGE_CHANCE)) this.addSideLedge(from, p);
+    if (r.chance(lerp(C.SIDE_LEDGE_CHANCE[0], C.SIDE_LEDGE_CHANCE[1], k))) this.addSideLedge(from, p);
     this.layChain(from, p);
     this.addWind(from, p);
     this.placeSpikes(from, p);
@@ -746,26 +748,27 @@ export class Tower {
 
   // ---------------------------------------------------------------- spikes
 
-  // One pattern per gap from the spike bag, plus a loose extra spike now and then. Higher up it
-  // gets harder: breathers fill in, some gaps get a second pattern, extras get likelier.
+  // This gap owes its share of spikes (SPIKE_RATE at its height); patterns from the bag go in
+  // until it's paid. A pattern that finds no room is skipped, and what's still owed carries on
+  // to the next gap, up to SPIKE_DEBT_MAX.
   placeSpikes(from, to) {
-    const r = this.rng;
-    const d = this.spikeLevel(to.y);
-    const at = (range) => lerp(range[0], range[1], d);
+    if (this.atStart(to.y)) return;
     const m = -to.y / C.PX_PER_M;
-    const open = (p) => p === 'none' || m >= (C.SPIKE_FROM[p] ?? 0);
-    const some = (p) => p !== 'none' && open(p);
-    let pattern = this.spikeBag.next(open);
-    if (pattern === 'none' && r.chance(at(C.SPIKE_FILL))) pattern = this.spikeBag.next(some);
-    if (r.chance(at(C.SPIKE_SKIP))) pattern = 'none';
-    this.placePattern(from, to, pattern);
-    if (r.chance(at(C.SPIKE_DOUBLE))) this.placePattern(from, to, this.spikeBag.next(some));
-    if (r.chance(at(C.SPIKE_EXTRA))) this.addSpike(from, to, { rad: [14, 24] });
+    const rate = lerp(C.SPIKE_RATE[0], C.SPIKE_RATE[1], this.spikeLevel(to.y)) / 100;
+    this.spikeDebt = Math.min(C.SPIKE_DEBT_MAX, this.spikeDebt + rate * ((from.y - to.y) / C.PX_PER_M));
+    const open = (p) => m >= (C.SPIKE_FROM[p] ?? 0);
+    for (let misses = 0; this.spikeDebt >= 0.5 && misses < 4; ) {
+      const before = this.hazards.length;
+      this.placePattern(from, to, this.spikeBag.next(open));
+      const added = this.hazards.length - before;
+      this.spikeDebt -= added;
+      if (!added) misses++;
+    }
   }
 
-  // 0 at the ground to 1 at END_HEIGHT: how hard the spikes are here (gentle early, steep late).
+  // 0 at the ground to 1 at END_HEIGHT.
   spikeLevel(y) {
-    return clamp(-y / C.PX_PER_M / C.END_HEIGHT, 0, 1) ** C.SPIKE_CURVE;
+    return clamp(-y / C.PX_PER_M / C.END_HEIGHT, 0, 1);
   }
 
   placePattern(from, to, pattern) {

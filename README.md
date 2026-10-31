@@ -35,8 +35,8 @@ Every run climbs a new random tower. Today's best score, the last 7 runs and the
 **Rules**
 
 - You can fling as often as you like, on the ground or in mid-air, with a 0.5 s cooldown. The ball is blue when ready and warm-coloured while cooling down.
-- You have **5 hearts**. Spikes, saws and wall spikes cost one and stop your flinging for a second, so you drop. Losing the last heart sends you back to 0 m and starts a new run.
-- **Doors** sit every 100 m. Passing one gives back one heart, which flies up to the heart bar, and changes the colour palette. Doors you have opened stay as floors you can't fall below today.
+- You have **3 hearts**. Spikes, saws and wall spikes cost one and stop your flinging for a second, so you drop. Losing the last heart sends you back to 0 m and starts a new run.
+- **Doors** sit every 100 m. Passing one refills all your hearts (they fly up to the heart bar) and changes the colour palette. Doors you have opened stay as floors you can't fall below today.
 - **Elements launch you.** While a launch rises the ball turns purple and see-through: it is invincible and passes up through platforms. Each launch peaks where the next element waits a little above, so you can chain them.
 - The climb ends at **2500 m**: you float off into space and the title appears.
 

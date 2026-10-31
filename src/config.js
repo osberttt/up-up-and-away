@@ -23,11 +23,13 @@ export const WALL_BOUNCE = 0.8;
 export const JUMP_COOLDOWN = 0.5;
 export const HIT_STUN = 1; // no jumping for this long after a hazard hit, so you drop
 
-// Platforms are solid on every side (doors stay one-way). They are rare: the generator plans a
-// path of points up the tower and only this share of them becomes a platform (bouncy pads always do).
+// Platforms are solid on every side (doors stay one-way). The generator plans a path of points
+// up the tower and only a share of them becomes a platform (bouncy pads always do), plus a side
+// ledge now and then. Both grow from the first value at the ground to the second at END_HEIGHT,
+// so higher up, where spikes are thicker, there's more to land on when you're knocked down.
 export const SOLID_PLATFORMS = false; // switch: false makes every platform one-way, like before
-export const PLATFORM_CHANCE = 0.5;
-export const SIDE_LEDGE_CHANCE = 0.18;
+export const PLATFORM_CHANCE = [0.55, 0.8];
+export const SIDE_LEDGE_CHANCE = [0.2, 0.5];
 export const PLAT_THICK = 12; // collision height of a platform below its top
 
 export const DRAG_DEADZONE = 16; // drags shorter than this cancel
@@ -209,19 +211,22 @@ export const PORTAL_SPAN = [900, 1400]; // px from a blue portal up to its yello
 export const STAR_RADIUS = 48;
 export const STAR_CHANCE = 0.55;
 
-export const MAX_HP = 5; // hearts; there are no heart pickups, only doors give them back
-export const DOOR_EVERY = 100; // m between doors; passing one gives back one heart (it flies up to the bar)
+export const MAX_HP = 3; // hearts; there are no heart pickups, only doors give them back
+export const DOOR_EVERY = 100; // m between doors; passing one refills all hearts (they fly up to the bar)
 export const RESPAWN_DELAY = 0.9;
 
-// Spikes: each gap of the route draws one pattern from a shuffle bag, so the mix stays varied
-// and nothing repeats for long. Sizes and spots vary inside each pattern, and SPIKE_EXTRA adds a
-// loose spike now and then on top.
+// Spikes: how many there are follows SPIKE_RATE (spikes per 100m, from the first value at the
+// ground to the second at END_HEIGHT, in a straight line), whatever else is around. Each stretch
+// of the route owes its share, and patterns are drawn from a shuffle bag until it's paid, so the
+// mix stays varied and nothing repeats for long. Sizes and spots vary inside each pattern.
 //   spike: one small ball      big: one large ball     saw: moves up and down
 //   sawX: moves side to side   pair: a gate, one each side of the route
-//   row: three small in a diagonal line                 wall: teeth on a wall    none: a breather
+//   row: three small in a diagonal line                 wall: teeth on a wall
 //   patrol: slides back and forth at a steady speed     pulse: grows and shrinks
 //   orbit: a wide, slow ring of spikes you go through   wave: drifts across, bobbing up and down
-export const SPIKE_BAG = ['spike', 'spike', 'big', 'saw', 'sawX', 'pair', 'row', 'wall', 'patrol', 'pulse', 'orbit', 'wave', 'none', 'none', 'none', 'none', 'none'];
+export const SPIKE_BAG = ['spike', 'spike', 'big', 'saw', 'sawX', 'pair', 'row', 'wall', 'patrol', 'pulse', 'orbit', 'wave'];
+export const SPIKE_RATE = [15, 25];
+export const SPIKE_DEBT_MAX = 4; // spikes owed at most: where there's no room, they aren't all crammed in later
 // Progression: the height (m) where each pattern starts turning up (the rest are there from 0m).
 export const SPIKE_FROM = { saw: 150, sawX: 250, patrol: 400, pulse: 700, orbit: 1100, wave: 1600 };
 export const PULSE_MIN = 0.3; // a pulsing spike shrinks to this much of its full size
@@ -229,14 +234,7 @@ export const PULSE_MIN = 0.3; // a pulsing spike shrinks to this much of its ful
 export const RING_R = [110, 140]; // ring radius (px)
 export const RING_PERIOD = [10, 14]; // seconds per full turn
 export const RING_MORE = 1800; // m from where rings have four spikes instead of three
-// Spikes get harder as you climb: each of these goes from its first value at the ground to its
-// second at END_HEIGHT, along a curve (height fraction ^ SPIKE_CURVE): gentle early, steep late.
-export const SPIKE_CURVE = 1.4;
-export const SPIKE_SKIP = [0.2, 0]; // chance a gap's pattern is left out (more breathers early)
-export const SPIKE_FILL = [0, 0.9]; // chance a 'none' (breather) gap gets a pattern anyway
-export const SPIKE_DOUBLE = [0, 0.5]; // chance of a second pattern in the same gap
-export const SPIKE_EXTRA = [0.05, 0.55]; // chance of a loose extra spike
-export const SAW_SPEED = [1, 1.6]; // how fast saws swing
+export const SAW_SPEED = [1, 1.6]; // how fast moving spikes go, from the ground to END_HEIGHT
 export const SPIKE_CORRIDOR = 80; // px kept clear each side of the route line
 
 // Score (per run; a death starts over). Height itself scores nothing.

@@ -21,8 +21,8 @@ export const PALETTES = [
   // Daylight and noon: paper white, then the sun
   { name: 'Bauhaus', mood: 'bright', bg: '#f4efe1', fg: '#111111', accents: ['#e63946', '#1d3557', '#f1c40f', '#2a9d8f', '#f77f00'] },
   { name: 'Tropical', mood: 'bright', bg: '#ffe66d', fg: '#1a1a2e', accents: ['#ff6b6b', '#1a9e97', '#1a535c', '#ff9f1c', '#c44dff'] },
-  // Sunset: a saturated magenta sky, from the sun into the purples
-  { name: 'Magenta Dusk', mood: 'bright', bg: '#c2185b', fg: '#fff0f5', accents: ['#ffd23f', '#3bceac', '#7fd1f5', '#ff9e57', '#b39dff'] },
+  // Late afternoon: a soft apricot glow before dusk
+  { name: 'Apricot Haze', mood: 'pastel', bg: '#f2c48d', fg: '#3a2416', accents: ['#2f6fbf', '#7b3fb0', '#1f8f84', '#3c8d2f', '#3d5a80'] },
   // Dusk: purples
   { name: 'Grape Soda', mood: 'dark', bg: '#5b2386', fg: '#fbeaff', accents: ['#ffd23f', '#3bceac', '#ff6f91', '#9ad1ff', '#ff9a3c'] },
   { name: 'Disco', mood: 'bright', bg: '#3a0ca3', fg: '#ffffff', accents: ['#f72585', '#4cc9f0', '#ffd60a', '#06d6a0', '#ff9e00'] },
@@ -70,13 +70,30 @@ function hsl(c) {
   return { h, s, l };
 }
 
+// Brightness contrast (WCAG ratio, 1 to 21).
+const luminance = (c) => {
+  const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * f((c >> 16) & 255) + 0.7152 * f((c >> 8) & 255) + 0.0722 * f(c & 255);
+};
+const contrast = (a, b) => {
+  const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+};
+// Stock reds for danger, most vivid first, so one stands out on any background. Pastel palettes
+// get softer, dustier reds (and need a little less contrast), so spikes read as danger without
+// shouting over the soft colors.
+const DANGER_REDS = [0xff3b4f, 0xe0263a, 0xc41230, 0xff7080];
+const DANGER_CONTRAST = 3.5;
+const PASTEL_REDS = [0xe4707a, 0xd8636d, 0xc95660, 0xb84a54];
+const PASTEL_CONTRAST = 2.8;
+
 const hueDist = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
 const rgbDist = (a, b) => Math.hypot(((a >> 16) & 255) - ((b >> 16) & 255), ((a >> 8) & 255) - ((b >> 8) & 255), (a & 255) - (b & 255));
 
-// Roles: [hue target, max hue distance, fallback]. canJump is cool, cantJump warm, launched purple.
+// Roles: [hue target, max hue distance, fallback]. canJump is cool, launched purple, star (the
+// comet's color) yellow. cantJump (danger) is always a red: see expand.
 const ROLES = {
   canJump: [205, 50, 0x3fa9ff],
-  cantJump: [5, 30, 0xff4a4a],
   launched: [290, 45, 0xb45cff],
   star: [50, 20, 0xffd84a],
   heart: [340, 25, 0xff6f9f],
@@ -111,9 +128,19 @@ export function expand(p) {
     return c;
   };
   // The three ball states must differ, and hearts must not look like the warm danger color.
-  // The star may share a color.
   const canJump = pick('canJump', true);
-  const cantJump = pick('cantJump', true);
+  // Danger is always a vivid red that stands out from the background: the palette's own red,
+  // else the stock reds from most vivid down, whichever first reaches DANGER_CONTRAST; failing
+  // that, the clearest of them. Spikes and the ball while it can't jump share it.
+  const trueRed = (c) => {
+    const { h, s, l } = hsl(c);
+    return hueDist(h, 0) <= 10 && s > 0.6 && l > 0.35 && l < 0.7; // not pink, orange, pale or dark
+  };
+  const pastel = p.mood === 'pastel';
+  const reds = pastel ? PASTEL_REDS : [...accents.filter(trueRed), ...DANGER_REDS];
+  const need = pastel ? PASTEL_CONTRAST : DANGER_CONTRAST;
+  const cantJump = reds.find((c) => contrast(c, bg) >= need) ?? [...reds].sort((a, b) => contrast(b, bg) - contrast(a, bg))[0];
+  used.add(cantJump);
   // Invincible: a purple/magenta accent if there is one, else the palette's most saturated
   // leftover accent, and only then the fallback purple.
   const sat = (c) => hsl(c).s;
@@ -122,13 +149,15 @@ export function expand(p) {
   if (!accents.includes(launched) || used.has(launched)) launched = spare()[0] ?? visible(ROLES.launched[2]);
   used.add(launched);
   const heart = pick('heart', true);
-  const star = pick('star', false);
+  // Stars are the ball's ready color: go for them. The comet keeps a bright yellow.
+  const star = canJump;
+  const yellow = pick('star', false);
   // Elements get their own colors, always the palette's accents (their shapes tell them apart).
   // A looser visibility rule than the ball's, so muted palettes still have choices. Accents the
-  // ball doesn't use come first; the warm danger color is never used.
+  // ball doesn't use come first; reds are never used, so only danger is red.
   const raw = p.accents.map(toInt).filter((c) => {
-    const { s, l } = hsl(c);
-    return s > 0.15 && l < 0.95 && rgbDist(c, bg) > 60 && c !== cantJump;
+    const { s, l, h } = hsl(c);
+    return s > 0.15 && l < 0.95 && rgbDist(c, bg) > 60 && c !== cantJump && !(s > 0.35 && hueDist(h, 0) <= 18);
   });
   const free = raw.filter((c) => c !== canJump && c !== launched).sort((a, b) => sat(b) - sat(a));
   const pool = [...free, ...raw.filter((c) => !free.includes(c))];
@@ -154,7 +183,7 @@ export function expand(p) {
     planet: el(5),
     rail: el(6),
     kite: el(7),
-    comet: star, // a bright streak, like a shooting star
+    comet: yellow, // a bright streak, like a shooting star
     wind: mixColor(fg, bg, 0.25), // wind lines in a soft version of the contrast tone
     bg,
     door: bg,

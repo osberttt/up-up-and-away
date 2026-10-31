@@ -1125,18 +1125,26 @@ export class GameScene extends Phaser.Scene {
       this.doorT = this.runT;
       // The tower takes on the palette of the section above the door just reached.
       this.setPalette(this.runDoor - 1);
-      // One heart back: it flies up from the ball into its slot in the bar, and counts on arrival.
-      if (pl.hp + (this.heartsFlying || 0) < C.MAX_HP) {
-        const slot = pl.hp + (this.heartsFlying || 0);
-        this.heartsFlying = (this.heartsFlying || 0) + 1;
+      // All hearts back: each missing one flies up from the ball into its slot in the bar, one
+      // after another, and counts on arrival.
+      const missing = C.MAX_HP - pl.hp - this.heartsFlying;
+      if (missing > 0) {
         sfx.heart();
-        this.popText(pl.x, pl.y - 60, '+1♥', 18, this.colTo.heart);
+        this.popText(pl.x, pl.y - 60, `+${missing}♥`, 18, this.colTo.heart);
         this.burst(pl.x, pl.y, this.colTo.heart, 14, 220);
-        this.hud.flyHeart(pl.x, pl.y - this.cameras.main.scrollY, slot, () => {
-          this.heartsFlying--;
-          if (!pl.dead && pl.hp < C.MAX_HP) pl.hp++;
-          this.dirty = true;
-        });
+        const fromY = pl.y - this.cameras.main.scrollY;
+        const fromX = pl.x;
+        for (let k = 0; k < missing; k++) {
+          const slot = pl.hp + this.heartsFlying;
+          this.heartsFlying++;
+          this.time.delayedCall(k * 110, () =>
+            this.hud.flyHeart(fromX, fromY, slot, () => {
+              this.heartsFlying--;
+              if (!pl.dead && pl.hp < C.MAX_HP) pl.hp++;
+              this.dirty = true;
+            }),
+          );
+        }
       }
     }
     // The last door: into space (after it has scored).
