@@ -279,8 +279,8 @@ export class Menu {
     this.statNames = item(label(sc, this.cardX + 44, oy + 312, '', 16, 0.7).setOrigin(0, 0).setAlign('left').setLineSpacing(12));
     this.statValues = item(label(sc, this.cardX + this.cardW - 44, oy + 312, '', 16).setOrigin(1, 0).setAlign('right').setLineSpacing(12));
     this.chartLabel = item(label(sc, C.W / 2, oy + 470, 'LAST 7 RUNS', 13, 0.6));
-    // The release version (from package.json), so a build can be matched to its repo tag.
-    this.version = item(label(sc, C.W / 2, oy + 864, `v${__VERSION__}  ·  by Min Htet Naing (Osbert)`, 11, 0.45));
+    // A new tower every day (see GameScene).
+    this.footer = item(label(sc, C.W / 2, oy + 864, 'come back again tomorrow for a different climb', 13, 0.6));
     this.chart = item(sc.add.graphics());
     this.chartTexts = [];
     for (let i = 0; i < 7; i++) {
@@ -328,7 +328,7 @@ export class Menu {
     g.fillStyle(ink, 1).fillRoundedRect(this.cardX, this.cardY + 8, this.cardW, this.cardH, 28);
     g.fillStyle(face, 1).fillRoundedRect(this.cardX, this.cardY, this.cardW, this.cardH, 28);
     g.lineStyle(3, ink, 1).strokeRoundedRect(this.cardX, this.cardY, this.cardW, this.cardH, 28);
-    for (const t of [this.title, this.bestLabel, this.bestValue, this.dayText, this.statNames, this.statValues, this.chartLabel, this.version, ...this.chartTexts]) tint(t, ink);
+    for (const t of [this.title, this.bestLabel, this.bestValue, this.dayText, this.statNames, this.statValues, this.chartLabel, this.footer, ...this.chartTexts]) tint(t, ink);
 
     this.bestValue.setText(`${s.score}`);
     this.dayText.setText(formatDay(this.sc.day));

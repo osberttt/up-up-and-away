@@ -6,6 +6,19 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const TAU = Math.PI * 2;
 
+// Value of a curve given as [x, value] points at x: straight between points, flat past the ends.
+function curveAt(points, x) {
+  if (x <= points[0][0]) return points[0][1];
+  for (let i = 1; i < points.length; i++) {
+    const [x1, v1] = points[i];
+    if (x <= x1) {
+      const [x0, v0] = points[i - 1];
+      return lerp(v0, v1, (x - x0) / (x1 - x0));
+    }
+  }
+  return points[points.length - 1][1];
+}
+
 // Door heights in meters: 100, 200, 300, ...
 export function doorHeight(n) {
   return C.DOOR_EVERY * n;
@@ -219,7 +232,8 @@ class Bag {
   }
 }
 
-// A tower, built from a seed key: every run gets a new random key (see GameScene). Generation
+// A tower, built from a seed key: the day's date, so everyone climbs the same tower that day
+// (see GameScene). Generation
 // is sequential from the seed, so the same key always rebuilds the exact same tower.
 //
 // Path-first: a route of points goes up the tower, each inside the reach of a launch from the
@@ -264,8 +278,34 @@ export class Tower {
     this.scratch = [];
     this.zoneScratch = [];
     this.lastMain = this.addPlatform({ x: C.W / 2, y: 0, w: C.W, type: 'ground' });
+    this.floorY = 0; // the last main platform added (see floorBelow)
     // The start, where the tutorial text is, stays empty: no platforms, spikes or ledges.
     this.addZone('clear', 0, -C.START_CLEAR, C.W, 50);
+  }
+
+  // y of the highest floor at or below y: the last main platform or a door, whichever is higher.
+  floorBelow(y) {
+    const n = nextDoorIndex(-y / C.PX_PER_M) - 1;
+    return n > 0 ? Math.min(this.floorY, -doorHeight(n) * C.PX_PER_M) : this.floorY;
+  }
+
+  // A spot for a platform out of every zone: { x, y, w }, or null. Tries width w, then 110; for
+  // each, heights from yTop down to yBottom; at each height, the x nearest to x. Fixed
+  // candidates, no random draws.
+  freeSpot(x, yTop, yBottom, w) {
+    for (const pw of [w, Math.min(w, 110)]) {
+      const minC = C.WALL + pw / 2 + 4;
+      const maxC = C.W - C.WALL - pw / 2 - 4;
+      for (let y = yTop; y <= yBottom; y += 40) {
+        let best = null;
+        for (let i = 0; i <= 8; i++) {
+          const cx = i === 8 ? clamp(x, minC, maxC) : lerp(minC, maxC, i / 7);
+          if (!this.inZone(cx, y, pw / 2, 'any') && (best === null || Math.abs(cx - x) < Math.abs(best - x))) best = cx;
+        }
+        if (best !== null) return { x: best, y, w: pw };
+      }
+    }
+    return null;
   }
 
   // Within the empty start area?
@@ -348,7 +388,9 @@ export class Tower {
     const pHard = 0.2;
     const pMed = 0.38;
     const tierRoll = r.next();
-    const tier = tierRoll < pHard ? 'hard' : tierRoll < pHard + pMed ? 'medium' : 'easy';
+    let tier = tierRoll < pHard ? 'hard' : tierRoll < pHard + pMed ? 'medium' : 'easy';
+    const early = -from.y / C.PX_PER_M < C.EASY_UNTIL;
+    if (early && tier === 'hard') tier = 'medium';
 
     // Vertical gap and how far sideways the next point may sit. A launch reaches
     // horizontally 2·sqrt(P·(P−dy)) at height dy; we only use a fraction of that.
@@ -362,14 +404,14 @@ export class Tower {
       reach = 2 * Math.sqrt(P * (P - dy)) * (tier === 'easy' ? 0.5 : 0.7);
     }
 
-    const w = r.range(150, 250);
+    let w = r.range(150, 250);
     let type = 'normal';
     const roll = r.next();
     if (roll < 0.22) type = 'moving';
     else if (roll < 0.42) type = 'crumble';
     // Many route points stay empty air; fewer higher up.
     const k = this.spikeLevel(from.y);
-    if (!r.chance(lerp(C.PLATFORM_CHANCE[0], C.PLATFORM_CHANCE[1], k))) type = 'path';
+    const air = !r.chance(lerp(C.PLATFORM_CHANCE[0], C.PLATFORM_CHANCE[1], k));
 
     const minC = C.WALL + w / 2 + 4;
     const maxC = C.W - C.WALL - w / 2 - 4;
@@ -389,6 +431,16 @@ export class Tower {
     if (door !== null) y = from.y - (door + 50) > 120 ? door + 50 : door - 50;
 
     this.addDoorsUpTo(y);
+    // Early on, a point too far above the last floor needs a platform, even an empty one. It comes
+    // down to EASY_MAX_GAP above that floor (no door lies between them, see floorBelow), then,
+    // to get out of zones, moves sideways, lower (still above the last point) or gets narrower.
+    const floor = this.floorBelow(y);
+    const need = early && floor - y > C.EASY_MAX_GAP;
+    if (need) {
+      const spot = this.freeSpot(x, Math.min(floor - C.EASY_MAX_GAP, from.y - 60), from.y - 60, w);
+      if (spot) ({ x, y, w } = spot);
+    }
+    if (air && !need) type = 'path';
 
     // A platform never sits on an element or across a chain hop: it stays a route point.
     if (type !== 'path' && this.inZone(x, y, w / 2, 'any')) type = 'path';
@@ -406,7 +458,10 @@ export class Tower {
       }
     }
     // A 'path' point is never added as a platform; it only anchors the things placed around it.
-    if (p.type !== 'path') this.addPlatform(p);
+    if (p.type !== 'path') {
+      this.addPlatform(p);
+      this.floorY = y;
+    }
     this.lastMain = p;
 
     if (space) return;
@@ -754,7 +809,7 @@ export class Tower {
   placeSpikes(from, to) {
     if (this.atStart(to.y)) return;
     const m = -to.y / C.PX_PER_M;
-    const rate = lerp(C.SPIKE_RATE[0], C.SPIKE_RATE[1], this.spikeLevel(to.y)) / 100;
+    const rate = curveAt(C.SPIKE_RATE, m) / 100;
     this.spikeDebt = Math.min(C.SPIKE_DEBT_MAX, this.spikeDebt + rate * ((from.y - to.y) / C.PX_PER_M));
     const open = (p) => m >= (C.SPIKE_FROM[p] ?? 0);
     for (let misses = 0; this.spikeDebt >= 0.5 && misses < 4; ) {
@@ -851,27 +906,47 @@ export class Tower {
     return lerp(from.x, to.x, clamp((from.y - y) / (from.y - to.y), 0, 1));
   }
 
-  // A spiky ball anywhere across the width, or at `at`, except in a corridor (SPIKE_CORRIDOR
-  // each side) along the route line, so the route always has a gap through. Also kept off
+  // A spiky ball, at `at` or placed on purpose: either in the way (SPIKE_WAY_GAP beside the
+  // route line, mid-hop, so you aim around it) or away (SPIKE_AWAY_GAP or more off to one side).
+  // The route always keeps a way through: one side of an in-the-way spike is open. Also kept off
   // platforms, doors, portals, elements and chain hops. `move()` gives a moving one its motion
   // (see hazardPos), with ex/ey, how far it gets from its spot; everything is kept clear of the
   // whole box it moves in. `type` is the pattern, for stats.
   addSpike(from, to, { type = 'spike', rad: radR = [16, 26], move = null, at = null } = {}) {
     const r = this.rng;
+    // Drawn up front so retries below don't change which kind it is.
+    const level = this.spikeLevel(to.y);
+    const wWay = lerp(...C.SPIKE_PURPOSE.way, level);
+    const wAway = lerp(...C.SPIKE_PURPOSE.away, level);
+    const way = !at && r.chance(wWay / (wWay + wAway));
+    const lo = C.WALL + 4;
+    const hi = C.W - C.WALL - 4;
     for (let i = 0; i < (at ? 1 : 8); i++) {
       const rad = r.range(...radR);
       const m = move ? move() : {};
       const ex = m.ex ?? 0;
       const ey = m.ey ?? 0;
-      const x = at ? at.x : r.range(C.WALL + rad + ex + 8, C.W - C.WALL - rad - ex - 8);
       const yMin = to.y + rad + ey + 20;
       const yMax = from.y - rad - ey - 40;
       if (yMax <= yMin) return null;
-      const y = at ? at.y : r.range(yMin, yMax);
-      if (x - rad - ex < C.WALL + 4 || x + rad + ex > C.W - C.WALL - 4 || y < yMin || y > yMax) continue;
+      const y = at ? at.y : way ? lerp(yMax, yMin, r.range(0.25, 0.75)) : r.range(yMin, yMax);
+      const px = this.pathX(from, to, y);
+      const reach = rad + ex; // half the width of the box it moves in
+      const side = r.chance(0.5) ? -1 : 1;
+      let x;
+      if (at) x = at.x;
+      else if (way) x = px + side * (reach + r.range(...C.SPIKE_WAY_GAP));
+      else {
+        // Anywhere from SPIKE_AWAY_GAP out to the wall, on a side with room for it.
+        const gap = reach + C.SPIKE_AWAY_GAP;
+        const room = side > 0 ? hi - reach - (px + gap) : px - gap - (lo + reach);
+        const s = room >= 0 ? side : -side;
+        x = s > 0 ? r.range(px + gap, hi - reach) : r.range(lo + reach, px - gap);
+      }
+      if (x - reach < lo || x + reach > hi || y < yMin || y > yMax) continue;
       // Distance from the route to the box it moves in.
       const near = Math.min(...[-1, 0, 1].map((k) => Math.max(0, Math.abs(x - this.pathX(from, to, y + k * ey)) - ex)));
-      if (near < C.SPIKE_CORRIDOR + rad) continue;
+      if (near < (way ? C.SPIKE_WAY_GAP[0] : C.SPIKE_CORRIDOR) + rad) continue;
       if (this.platformNear(x, y, rad + ex + 30, rad + ey + 60)) continue;
       if (this.doorNear(y, rad + ey + 70) !== null) continue;
       if (this.inZone(x, y, rad + Math.max(ex, ey) + 20, 'any') || this.portalNear(x, y, rad + Math.max(ex, ey) + 70)) continue;

@@ -30,6 +30,11 @@ export const HIT_STUN = 1; // no jumping for this long after a hazard hit, so yo
 export const SOLID_PLATFORMS = false; // switch: false makes every platform one-way, like before
 export const PLATFORM_CHANCE = [0.55, 0.8];
 export const SIDE_LEDGE_CHANCE = [0.2, 0.5];
+// The first stretch is for learning: below EASY_UNTIL m no hop needs a second fling, and the
+// route never climbs more than EASY_MAX_GAP px above the last floor (platform or door) without
+// a platform; an empty route point that would go past that becomes one.
+export const EASY_UNTIL = 100;
+export const EASY_MAX_GAP = 520; // a full fling peaks at PEAK (640)
 export const PLAT_THICK = 12; // collision height of a platform below its top
 
 export const DRAG_DEADZONE = 16; // drags shorter than this cancel
@@ -215,8 +220,8 @@ export const MAX_HP = 3; // hearts; there are no heart pickups, only doors give 
 export const DOOR_EVERY = 100; // m between doors; passing one refills all hearts (they fly up to the bar)
 export const RESPAWN_DELAY = 0.9;
 
-// Spikes: how many there are follows SPIKE_RATE (spikes per 100m, from the first value at the
-// ground to the second at END_HEIGHT, in a straight line), whatever else is around. Each stretch
+// Spikes: how many there are follows SPIKE_RATE (spikes per 100m, a curve through [m, rate]
+// points, straight between them), whatever else is around. Each stretch
 // of the route owes its share, and patterns are drawn from a shuffle bag until it's paid, so the
 // mix stays varied and nothing repeats for long. Sizes and spots vary inside each pattern.
 //   spike: one small ball      big: one large ball     saw: moves up and down
@@ -225,7 +230,8 @@ export const RESPAWN_DELAY = 0.9;
 //   patrol: slides back and forth at a steady speed     pulse: grows and shrinks
 //   orbit: a wide, slow ring of spikes you go through   wave: drifts across, bobbing up and down
 export const SPIKE_BAG = ['spike', 'spike', 'big', 'saw', 'sawX', 'pair', 'row', 'wall', 'patrol', 'pulse', 'orbit', 'wave'];
-export const SPIKE_RATE = [15, 25];
+// Gentle at first, then it ramps up and ends where it always did.
+export const SPIKE_RATE = [[0, 10], [250, 11], [500, 13], [1000, 18], [1800, 22], [2500, 25]];
 export const SPIKE_DEBT_MAX = 4; // spikes owed at most: where there's no room, they aren't all crammed in later
 // Progression: the height (m) where each pattern starts turning up (the rest are there from 0m).
 export const SPIKE_FROM = { saw: 150, sawX: 250, patrol: 400, pulse: 700, orbit: 1100, wave: 1600 };
@@ -236,6 +242,12 @@ export const RING_PERIOD = [10, 14]; // seconds per full turn
 export const RING_MORE = 1800; // m from where rings have four spikes instead of three
 export const SAW_SPEED = [1, 1.6]; // how fast moving spikes go, from the ground to END_HEIGHT
 export const SPIKE_CORRIDOR = 80; // px kept clear each side of the route line
+// Single spikes either get in the way (just beside the route, so you aim around them) or sit
+// away from it (off to the side, they only catch wild shots). Weights for each purpose, from
+// the first value at the ground to the second at END_HEIGHT (only their ratio matters).
+export const SPIKE_PURPOSE = { way: [35, 60], away: [65, 40] };
+export const SPIKE_WAY_GAP = [40, 70]; // px from the route line to an in-the-way spike's edge
+export const SPIKE_AWAY_GAP = 150; // px at least from the route line to an away spike's edge
 
 // Score (per run; a death starts over). Height itself scores nothing.
 // Every element is worth the same: bouncy pad, star, heart, funnel, elevator, portal. Each pad,

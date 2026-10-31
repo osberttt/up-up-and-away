@@ -24,10 +24,11 @@ export class GameScene extends Phaser.Scene {
     this.day = dayKey();
     this.save = Save.load(this.day);
     setMuted(this.save.muted);
-    // Every run climbs a new random tower. Dev only: ?seed=abc rebuilds the same tower each time,
-    // and ?force=kite makes every chain element a kite (any element type works).
+    // A tower a day: every run that day climbs the same tower, built from the date. Dev only:
+    // ?seed=abc builds another tower, and ?force=kite makes every chain element a kite (any
+    // element type works).
     const params = import.meta.env?.DEV ? new URLSearchParams(location.search) : new URLSearchParams();
-    const seed = params.get('seed') || Math.random().toString(36).slice(2, 10);
+    const seed = params.get('seed') || this.day;
     this.tower = new Tower(seed, { force: params.get('force') });
 
     this.leaving = false; // restarting for a new run (see respawn)

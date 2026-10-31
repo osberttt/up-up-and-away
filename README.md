@@ -9,7 +9,7 @@
 | Main contact | Min Htet Naing (Osbert) · minhtetnaing25mhn@gmail.com · Telegram @minhtetnaing111 |
 | Genre | Arcade vertical climber (one-touch slingshot) |
 | Engine | Phaser 3.90 (JavaScript), built with Vite |
-| Playable link | [[DIGIT7S HOSTING URL]] |
+| Playable link | https://osbert.dev/up-up-and-away/ |
 
 ## 1. What it is
 
