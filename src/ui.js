@@ -1,5 +1,5 @@
 import * as C from './config.js';
-import { formatDay, parseDay, shiftDay } from './rng.js';
+import { formatDay } from './rng.js';
 import { doorHeight } from './tower.js';
 import { sfx, setMuted } from './audio.js';
 import { palette, drawHeart, inkHeart, tint, hex, textColors } from './draw.js';
@@ -252,7 +252,7 @@ export class PillButton {
 }
 
 // The pause menu: a card in the current palette's colors over a dimmed game. Today's best score
-// big, a few stats, the last 7 days, then the buttons.
+// big, a few stats, the last 7 runs, then the buttons.
 export class Menu {
   constructor(sc) {
     this.sc = sc;
@@ -279,7 +279,7 @@ export class Menu {
     // Stats: a two-column list, names left, values right.
     this.statNames = item(label(sc, this.cardX + 44, oy + 312, '', 16, 0.7).setOrigin(0, 0).setAlign('left').setLineSpacing(12));
     this.statValues = item(label(sc, this.cardX + this.cardW - 44, oy + 312, '', 16).setOrigin(1, 0).setAlign('right').setLineSpacing(12));
-    this.chartLabel = item(label(sc, C.W / 2, oy + 460, 'LAST 7 DAYS', 13, 0.6));
+    this.chartLabel = item(label(sc, C.W / 2, oy + 470, 'LAST 7 RUNS', 13, 0.6));
     // The release version (from package.json), so a build can be matched to its repo tag.
     this.version = item(label(sc, C.W / 2, oy + 864, `v${__VERSION__}  ·  by Min Htet Naing (Osbert)`, 11, 0.45));
     this.chart = item(sc.add.graphics());
@@ -344,15 +344,14 @@ export class Menu {
     this.drawChart(ink);
   }
 
-  // Best score for each of the last 7 days, today on the right and solid.
+  // Score of each of the last 7 runs, the one in progress on the right and solid ("now"), the
+  // ones before it faint with the height they reached. Empty slots stay on the left.
   drawChart(ink) {
     const s = this.sc.save;
-    const days = [];
-    for (let i = 6; i >= 0; i--) {
-      const key = shiftDay(this.sc.day, -i);
-      days.push({ key, value: i === 0 ? s.score : s.scores[key] || 0 });
-    }
-    const max = Math.max(10, ...days.map((d) => d.value));
+    const now = { score: this.sc.score, now: true };
+    const runs = [...s.runs.slice(-6), now];
+    while (runs.length < 7) runs.unshift(null);
+    const max = Math.max(10, ...runs.map((r) => r?.score || 0));
     const g = this.chart;
     const base = this.oy + 608;
     const bw = 38;
@@ -360,12 +359,14 @@ export class Menu {
     const x0 = C.W / 2 - (7 * bw + 6 * gap) / 2;
     g.clear();
     g.lineStyle(2, ink, 0.25).lineBetween(x0 - 8, base, x0 + 7 * bw + 6 * gap + 8, base);
-    days.forEach((d, i) => {
+    runs.forEach((r, i) => {
       const x = x0 + i * (bw + gap);
-      const h = d.value > 0 ? Math.max(4, (d.value / max) * 100) : 0;
-      if (h > 0) g.fillStyle(ink, i === 6 ? 1 : 0.3).fillRoundedRect(x, base - h, bw, h, Math.min(6, h / 2));
-      this.chartTexts[i * 2].setText(`${parseDay(d.key).getDate()}`).setPosition(x + bw / 2, base + 14);
-      this.chartTexts[i * 2 + 1].setText(d.value > 0 ? `${Math.floor(d.value)}` : '').setPosition(x + bw / 2, base - h - 11);
+      const v = r?.score || 0;
+      const h = v > 0 ? Math.max(4, (v / max) * 100) : 0;
+      if (h > 0) g.fillStyle(ink, r.now ? 1 : 0.3).fillRoundedRect(x, base - h, bw, h, Math.min(6, h / 2));
+      const under = !r ? '' : r.now ? 'now' : `${r.height}m`;
+      this.chartTexts[i * 2].setText(under).setPosition(x + bw / 2, base + 14);
+      this.chartTexts[i * 2 + 1].setText(r ? `${Math.floor(v)}` : '').setPosition(x + bw / 2, base - h - 11);
     });
   }
 

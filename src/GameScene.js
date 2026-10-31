@@ -117,11 +117,17 @@ export class GameScene extends Phaser.Scene {
         this.launch(60, -1500);
         [0, 450, 900].forEach((ms) => this.time.delayedCall(ms, () => this.elementScore(pl.x, pl.y)));
         if (shot === 'pause') {
+          // A few earlier runs, so the last-runs chart has something to show.
+          this.save.runs = [{ score: 150, height: 214 }, { score: 400, height: 512 }, { score: 250, height: 377 }, { score: 700, height: 806 }, { score: 350, height: 431 }, { score: 0, height: 48 }];
           this.time.delayedCall(1600, () => this.menu.open());
           ready(2100);
         } else ready(1150);
       } else if (shot === 'ending') {
-        this.launch(0, -2200); // up through the last door; the ending starts by itself (showEndTitle sets ready)
+        // From just under the last door straight up through it, so nothing is in the way; it scores,
+        // then the ending starts by itself (showEndTitle sets ready).
+        [0, 300].forEach((ms) => this.time.delayedCall(ms, () => this.elementScore(pl.x, pl.y)));
+        pl.y = -(C.END_HEIGHT - 4) * C.PX_PER_M - C.PLAYER_R;
+        this.launch(0, -2200);
       }
     });
   }
@@ -141,6 +147,7 @@ export class GameScene extends Phaser.Scene {
     this.colFrom = this.col;
     this.colTo = SPACE;
     this.colT = this.time.now;
+    this.endRun();
     this.persist();
     sfx.best();
     buzz(60);
@@ -350,6 +357,22 @@ export class GameScene extends Phaser.Scene {
     this.beatBest = this.save.score === 0; // no NEW BEST banner on a day's first run
     this.chain = 0; // elements hit in a row, each within CHAIN_WINDOW of the last
     this.chainT = -Infinity;
+    this.runTop = this.height; // highest point of this run, in m
+    this.runEnded = false;
+  }
+
+  // This run so far, or null if nothing happened in it yet (no points, barely left the start).
+  runRecord() {
+    if (this.runEnded || (this.score === 0 && this.runTop < 1)) return null;
+    return { score: this.score, height: Math.floor(this.runTop) };
+  }
+
+  // A death, the ending or a tower restart closes the run into the last-runs history.
+  endRun() {
+    const run = this.runRecord();
+    this.runEnded = true;
+    if (run) this.save.runs = [...this.save.runs, run].slice(-Save.RUNS_KEPT);
+    this.save.run = null;
   }
 
   // An element hit (pad, star, heart, funnel, elevator, portal): SCORE_ELEMENT points and a word
@@ -386,12 +409,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   persist() {
+    this.save.run = this.runRecord();
     Save.store(this.save);
     this.dirty = false;
     this.lastSave = this.time.now;
   }
 
   restartTower() {
+    this.endRun();
     Object.assign(this.save, { best: 0, score: 0, falls: 0, bigFall: 0, climbed: 0, deaths: 0 });
     Save.store(this.save);
     this.scene.restart();
@@ -1098,6 +1123,7 @@ export class GameScene extends Phaser.Scene {
     this.burst(pl.x, pl.y, this.col.spark, 18, 320);
     this.burst(pl.x, pl.y, this.col.hazard, 12, 260);
     this.save.deaths++;
+    this.endRun();
     this.persist();
   }
 
@@ -1125,6 +1151,7 @@ export class GameScene extends Phaser.Scene {
     const pl = this.player;
     const h = this.heightOf(pl.y);
     this.height = h;
+    this.runTop = Math.max(this.runTop, h);
     // Every door reached in this run (once per run, even if it was opened earlier) scores by how
     // fast you got there from the previous one, and refills all hearts.
     while (h >= doorHeight(this.runDoor)) {

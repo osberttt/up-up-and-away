@@ -4,8 +4,10 @@ const KEY = 'upupandaway.save.v1';
 // The game's earlier names; read once so saves carry over.
 const OLD_KEYS = ['chickenjumps.save.v1', 'upfall.save.v1'];
 const HISTORY_DAYS = 30;
+export const RUNS_KEPT = 7;
 
 const num = (v, fallback = 0) => (Number.isFinite(v) ? v : fallback);
+const asRun = (r) => (r && typeof r === 'object' ? { score: num(r.score), height: num(r.height) } : null);
 
 // Loads the save and rolls it over to `today`: a save from an earlier day is archived
 // into history. Position isn't saved: every page load starts the climb at 0m.
@@ -32,8 +34,14 @@ export function load(today) {
     streak: 1,
     history,
     scores,
+    // The last RUNS_KEPT finished runs, oldest first, across days: { score, height }.
+    runs: (Array.isArray(raw.runs) ? raw.runs : []).map(asRun).filter(Boolean),
+    run: null, // the run in progress, saved as it goes; a closed page ends it (below)
     muted: !!raw.muted,
   };
+  const open = asRun(raw.run);
+  if (open) save.runs.push(open);
+  save.runs = save.runs.slice(-RUNS_KEPT);
 
   if (raw.day === today) {
     save.deaths = num(raw.deaths);

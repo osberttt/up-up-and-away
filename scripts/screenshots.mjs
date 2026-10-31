@@ -25,7 +25,7 @@ const SHOTS = [
   ['combo', '?at=300&shot=launch'],
   ['pause', '?at=800&shot=pause'],
   ['late-game', '?at=2050'],
-  ['ending', '?at=2490&shot=ending'],
+  ['ending', '?at=2480&shot=ending'],
 ];
 const PORT = 9333;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
