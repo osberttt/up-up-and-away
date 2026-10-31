@@ -2,7 +2,7 @@ import * as C from './config.js';
 import { formatDay } from './rng.js';
 import { doorHeight } from './tower.js';
 import { sfx, setMuted } from './audio.js';
-import { palette, drawHeart, inkHeart, tint, hex, textColors } from './draw.js';
+import { drawHeart, inkHeart, tint, hex, textColors } from './draw.js';
 const BAR_W = 120;
 
 export function label(scene, x, y, text, size, alpha = 1, fixed = true) {
@@ -16,7 +16,7 @@ export function label(scene, x, y, text, size, alpha = 1, fixed = true) {
 }
 
 // Hearts top-left, the run's score top-center with a thin bar filling toward the run's next
-// door (in that door's color), pause top-right. Best height lives in the world as a dashed line.
+// door, pause top-right. Best height lives in the world as a dashed line.
 // Everything is drawn in the section's ink so it reads on any background.
 export class Hud {
   constructor(sc) {
@@ -42,7 +42,7 @@ export class Hud {
   }
 
   update(dt) {
-    const { height, runDoor: nextDoor, player, tower, col, runT, score } = this.sc;
+    const { height, runDoor: nextDoor, player, col, runT, score } = this.sc;
     const ink = col.ink;
     // The number counts up to the score and swells, gold, while it does.
     const shown = this.shownScore ?? score;
@@ -75,7 +75,6 @@ export class Hud {
 
     if (nextDoor !== this.doorN) {
       this.doorN = nextDoor;
-      this.doorColor = palette(tower, nextDoor).door;
       this.doorText.setText(`${doorHeight(nextDoor)}m`);
     }
     if (player.hp !== this.shownHp) {
@@ -101,13 +100,13 @@ export class Hud {
       }
     }
 
-    // Progress toward the run's next door, in that door's color.
+    // Progress toward the run's next door: an ink outline, filling with ink.
     const from = doorHeight(nextDoor - 1);
     const k = Math.max(0, Math.min(1, (height - from) / (doorHeight(nextDoor) - from)));
     const x0 = C.W / 2 - BAR_W / 2;
     g.fillStyle(ink, 1).fillRoundedRect(x0 - 2, 74, BAR_W + 4, 8, 4);
     g.fillStyle(col.bg, 1).fillRoundedRect(x0, 76, BAR_W, 4, 2);
-    if (k > 0) g.fillStyle(this.doorColor, 1).fillRoundedRect(x0, 76, Math.max(4, BAR_W * k), 4, 2);
+    if (k > 0) g.fillStyle(ink, 1).fillRoundedRect(x0, 76, Math.max(4, BAR_W * k), 4, 2);
 
     g.fillStyle(ink, 0.8);
     g.fillRoundedRect(C.W - 54, 31, 7, 24, 2);
