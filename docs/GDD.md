@@ -1,5 +1,7 @@
 # Up Up and Away: Game Design Document
 
+> **Out of date.** This document was written for an early version of the game. The submitted version 1.0.0 differs a lot: unlimited flings on a cooldown, 5 hearts, 11 launch elements unlocked by height, element chains, an ending at 2500 m. See [README.md](../README.md) for the current game.
+
 **Genre:** endless vertical arcade climber · **Platform:** mobile browser (also desktop) · **Mode:** offline, single player · **Engine:** Phaser 3
 
 ## 1. Pitch

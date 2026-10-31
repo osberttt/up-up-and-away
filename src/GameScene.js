@@ -96,6 +96,34 @@ export class GameScene extends Phaser.Scene {
     this.setupInput();
     this.setupLifecycle();
     this.setupMap();
+    if (import.meta.env?.DEV) this.devShot();
+  }
+
+  // Dev only, for screenshots (scripts/screenshots.mjs): ?shot=aim holds a drag (the aim arrow and
+  // slow motion), ?shot=launch fires a launch and three chained element scores, ?shot=pause plays
+  // that launch then opens the pause menu, ?shot=ending launches up through the 2500m door into
+  // the ending. window.__shotReady turns true when the staged moment is on screen.
+  devShot() {
+    const shot = new URLSearchParams(location.search).get('shot');
+    window.__shotReady = false;
+    const ready = (ms) => this.time.delayedCall(ms, () => (window.__shotReady = true));
+    if (!shot) return ready(1000);
+    const pl = this.player;
+    this.time.delayedCall(300, () => {
+      if (shot === 'aim') {
+        this.drag = { sx: C.W / 2, sy: C.H * 0.6, x: C.W / 2 - 70, y: C.H * 0.6 + 140, t: 0 };
+        ready(900);
+      } else if (shot === 'launch' || shot === 'pause') {
+        this.launch(60, -1500);
+        [0, 450, 900].forEach((ms) => this.time.delayedCall(ms, () => this.elementScore(pl.x, pl.y)));
+        if (shot === 'pause') {
+          this.time.delayedCall(1600, () => this.menu.open());
+          ready(2100);
+        } else ready(1150);
+      } else if (shot === 'ending') {
+        this.launch(0, -2200); // up through the last door; the ending starts by itself (showEndTitle sets ready)
+      }
+    });
   }
 
   // ---------------------------------------------------------------- ending
@@ -160,19 +188,22 @@ export class GameScene extends Phaser.Scene {
       alpha: 1,
       delay: C.END_BUTTON * 1000,
       duration: 500,
-      onComplete: () => btn.zone.setInteractive({ useHandCursor: true }),
+      onComplete: () => {
+        btn.zone.setInteractive({ useHandCursor: true });
+        if (import.meta.env?.DEV) window.__shotReady = true; // for scripts/screenshots.mjs
+      },
     });
   }
 
   // ---------------------------------------------------------------- debug map
 
-  // Debug map (in `npm run dev`, or any build with ?debug in the URL): M freezes the game and
+  // Debug map (in `npm run dev` only, never in the released build): M freezes the game and
   // frees the camera. Scroll with the wheel, by dragging, or with the arrow / Page keys (Shift
   // for faster); the tower keeps generating as you go up. T drops the blob in the middle of the
   // view and resumes; M or Esc resumes where you were.
   setupMap() {
     this.map = null; // { y } camera scroll while the map is open
-    const enabled = import.meta.env?.DEV || new URLSearchParams(location.search).has('debug');
+    const enabled = import.meta.env?.DEV;
     if (!enabled || !this.input.keyboard) return;
     this.mapText = label(this, C.W / 2, C.H - 26, '', 14, 0.9).setDepth(70).setVisible(false);
     const kb = this.input.keyboard;
@@ -229,9 +260,11 @@ export class GameScene extends Phaser.Scene {
   // No title card: the game starts right away. The texts live in the world, just above the ground.
   addTutorial() {
     const text = (y, s) => label(this, C.W / 2, y, s, 21, 0.85, false).setWordWrapWidth(C.W - 120).setLineSpacing(4);
+    // Both stay below the top bar: at the start the camera's top edge is TOP_GAP above the ball,
+    // and the bar takes about the first 110px of the screen.
     return [
-      text(-170, 'drag anywhere and release it\nto shoot the blob up'),
-      text(-560, 'drag again in the air\nto keep going up'),
+      text(-150, 'drag anywhere and release it\nto shoot the blob up'),
+      text(-340, 'drag again in the air\nto keep going up'),
     ];
   }
 

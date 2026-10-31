@@ -1,5 +1,7 @@
 # Up Up and Away: System Design
 
+> **Out of date.** This document describes an early version of the game's code. For version 1.0.0, see [README.md](../README.md) and the comments in `src/`, especially `src/config.js` (every tuning value is explained there) and `src/tower.js` (the generator).
+
 How the game is built: architecture, the main systems and their data, and the invariants that keep the daily tower fair and deterministic. For the gameplay itself, see [GDD.md](GDD.md).
 
 ## 1. Stack and build

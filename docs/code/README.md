@@ -1,5 +1,7 @@
 # Code documentation
 
+> **Out of date.** These pages describe an early version of the code. For version 1.0.0, see [README.md](../../README.md) and the comments in `src/`.
+
 One page per source file: what it does, what it exports, how it works inside, and what to watch out for when you change it. These pages describe the code as it is now; where they disagree with [SYSTEM_DESIGN.md](../SYSTEM_DESIGN.md), these pages are right (see [Known gaps](#known-gaps-in-the-older-docs)).
 
 ## Files

@@ -1,14 +1,16 @@
 {
   "name": "up-up-and-away",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
     "verify": "node scripts/verify-tower.mjs",
-    "palettes": "node scripts/palette-preview.mjs"
+    "palettes": "node scripts/palette-preview.mjs",
+    "package": "node scripts/package.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
     "phaser": "3.90.0"
